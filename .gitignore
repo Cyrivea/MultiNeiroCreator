@@ -18,6 +18,7 @@ chroma_db/
 data/
 *.db
 *.log
+.vscode/
 
 # ===== 备份与临时文件 =====
 *.bak
