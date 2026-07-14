@@ -1,0 +1,31 @@
+# ===== 机密配置文件 =====
+.env
+*.env
+secret_key.txt
+user_profile.json
+修改后更新服务器操作.md
+nginx_reviagent.conf
+cert/
+
+# ===== Python 虚拟环境与缓存 =====
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# ===== 向量数据库 / 本地数据 / 日志 =====
+chroma_db/
+data/
+*.db
+*.log
+
+# ===== 备份与临时文件 =====
+*.bak
+
+# ===== 前端依赖与构建产物 =====
+node_modules/
+dist/
+
+# ===== 操作系统垃圾文件 =====
+.DS_Store
+Thumbs.db
