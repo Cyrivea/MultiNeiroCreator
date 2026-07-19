@@ -1,0 +1,42 @@
+:root {
+  /* 主背景（沿用现有 Home.vue 的颜色） */
+  --bg-primary: #060610;
+  --bg-secondary: #121218;
+  --bg-tertiary: rgba(255, 255, 255, 0.03);
+  
+  /* 荧光强调色 */
+  --accent-neon-green: #39FF14;
+  --accent-neon-pink: #FF00FF;
+  --accent-purple: #8b5cf6;
+  --accent-cyan: #06b6d4;
+  
+  /* 边框和分隔线 */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.12);
+  
+  /* 文字颜色 */
+  --text-primary: #ffffff;
+  --text-secondary: #888888;
+  --text-muted: #555555;
+  
+  /* 圆角（Y2K 风格：小圆角或直角） */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+}
+
+/* 基础样式重置 */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Y2K 风格的通用边框类 */
+.y2k-border {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+/* 激活状态的样式 */
+.y2k-active {
+  border-color: var(--accent-purple);
+  box-shadow: 0 0 0 1px var(--accent-purple);
+}

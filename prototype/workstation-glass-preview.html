@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MultiNeiroCreator - AI Native Creative Workstation</title>
+    <style>
+      :root {
+        --bg: #17181a;
+        --bg-elevated: #1d1f22;
+        --bg-panel: #202327;
+        --bg-panel-2: #25292e;
+        --bg-panel-3: #2b3036;
+        --line: #30343a;
+        --line-soft: #2a2e33;
+        --text: #ebedf0;
+        --text-soft: #b7bcc4;
+        --text-muted: #8e959f;
+        --accent: #f08a24;
+        --accent-soft: rgba(240, 138, 36, 0.15);
+        --success: #6aa36f;
+        --warning: #caa364;
+        --danger: #c86f6f;
+        --radius: 10px;
+        --radius-sm: 7px;
+        --shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter,
+          "SF Pro Display",
+          "IBM Plex Sans",
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "HarmonyOS Sans SC",
+          "Noto Sans SC",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+
+      body {
+        font-size: 14px;
+        line-height: 1.45;
+        overflow: auto;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .app {
+        min-height: 100vh;
+        min-width: 1440px;
+        display: grid;
+        grid-template-columns: 280px minmax(720px, 1fr) 360px;
+        grid-template-rows: 52px 1fr 84px;
+        background: var(--bg);
+      }
+
+      .topbar,
+      .library,
+      .workspace,
+      .producer,
+      .transport {
+        min-width: 0;
+      }
+
+      .topbar {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 18px;
+        padding: 0 16px;
+        background: #151618;
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        z-index: 5;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .brand-mark {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        background:
+          linear-gradient(135deg, #f39f43 0%, #f08a24 68%),
+          var(--accent);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+      }
+
+      .brand-title {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .brand-title strong {
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+
+      .project-name {
+        min-width: 0;
+        color: var(--text-soft);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .menu {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      .menu::-webkit-scrollbar {
+        display: none;
+      }
+
+      .menu button,
+      .toolbar button,
+      .ghost-button,
+      .secondary-button,
+      .accent-button,
+      .mini-button,
+      .tag,
+      .track-action {
+        border: 1px solid var(--line);
+        background: var(--bg-panel);
+        color: var(--text-soft);
+        border-radius: 7px;
+      }
+
+      .menu button,
+      .toolbar button {
+        padding: 7px 11px;
+        cursor: pointer;
+      }
+
+      .menu button:hover,
+      .toolbar button:hover,
+      .ghost-button:hover,
+      .secondary-button:hover,
+      .accent-button:hover,
+      .mini-button:hover,
+      .track-action:hover {
+        color: var(--text);
+        background: var(--bg-panel-2);
+        border-color: #3a3f45;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .status-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #1f2226;
+        border: 1px solid var(--line);
+        color: var(--text-soft);
+        font-size: 12px;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--success);
+      }
+
+      .library {
+        background: var(--bg-elevated);
+        border-right: 1px solid var(--line);
+        display: grid;
+        grid-template-rows: auto auto auto 1fr auto;
+        gap: 14px;
+        padding: 14px;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .panel-head h2,
+      .section-title,
+      .pane-title {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+
+      .panel-head p,
+      .section-caption,
+      .muted {
+        margin: 4px 0 0;
+        color: var(--text-muted);
+      }
+
+      .ghost-button,
+      .secondary-button,
+      .accent-button {
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+
+      .accent-button {
+        background: var(--accent);
+        color: #17181a;
+        border-color: #d57b1f;
+        font-weight: 600;
+      }
+
+      .accent-button:hover {
+        background: #f49b42;
+        color: #101112;
+      }
+
+      .search {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 10px;
+        background: var(--bg-panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+      }
+
+      .search input {
+        width: 100%;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--text);
+      }
+
+      .category-list,
+      .module-list,
+      .project-meta,
+      .agent-list,
+      .suggestion-list,
+      .timeline-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .category-item,
+      .module-card,
+      .meta-card,
+      .agent-card,
+      .suggestion-card {
+        background: var(--bg-panel);
+        border: 1px solid var(--line-soft);
+        border-radius: var(--radius);
+      }
+
+      .category-item {
+        padding: 10px 12px;
+        cursor: pointer;
+      }
+
+      .category-item.active {
+        border-color: rgba(240, 138, 36, 0.55);
+        background: linear-gradient(180deg, #2a261f 0%, #23262a 100%);
+      }
+
+      .category-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .category-name {
+        font-weight: 600;
+      }
+
+      .category-count {
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .category-desc {
+        margin-top: 4px;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .module-scroll,
+      .producer-scroll,
+      .workspace-scroll {
+        min-height: 0;
+        overflow: auto;
+      }
+
+      .module-card {
+        padding: 12px;
+      }
+
+      .module-card.active {
+        border-color: rgba(240, 138, 36, 0.45);
+        background: #292521;
+      }
+
+      .module-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .module-card h3,
+      .meta-card h3,
+      .workspace-top h1,
+      .producer-header h2 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .module-card p,
+      .meta-card p,
+      .suggestion-card p,
+      .track-meta p {
+        margin: 4px 0 0;
+        color: var(--text-muted);
+      }
+
+      .tag {
+        padding: 4px 8px;
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+
+      .module-card-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .module-state {
+        font-size: 12px;
+        color: var(--text-soft);
+      }
+
+      .module-actions {
+        display: flex;
+        gap: 6px;
+      }
+
+      .mini-button,
+      .track-action {
+        padding: 6px 8px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+
+      .library-foot {
+        padding-top: 6px;
+        border-top: 1px solid var(--line);
+      }
+
+      .plugin-box {
+        padding: 12px;
+        background: var(--bg-panel);
+        border: 1px dashed #40444a;
+        border-radius: var(--radius);
+      }
+
+      .plugin-box strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .plugin-box p {
+        margin: 0 0 10px;
+        color: var(--text-muted);
+      }
+
+      .workspace {
+        background: #1b1d20;
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        border-right: 1px solid var(--line);
+      }
+
+      .workspace-top {
+        padding: 14px 16px 10px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .workspace-top p {
+        margin: 6px 0 0;
+        color: var(--text-muted);
+      }
+
+      .workspace-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .structure-bar {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(96px, 1fr));
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        background: #181a1d;
+      }
+
+      .section-block {
+        padding: 10px 12px;
+        background: var(--bg-panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .section-block strong {
+        display: block;
+        margin-bottom: 2px;
+        font-size: 13px;
+      }
+
+      .section-block span {
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .workspace-scroll {
+        padding: 12px 16px 14px;
+      }
+
+      .workspace-panel {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        background: #1e2024;
+        box-shadow: var(--shadow);
+      }
+
+      .timeline-head {
+        display: grid;
+        grid-template-columns: 190px 1fr 180px;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        background: #20242a;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .timeline-ruler {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 8px;
+      }
+
+      .timeline-ruler span {
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .timeline-row {
+        display: grid;
+        grid-template-columns: 190px 1fr 180px;
+        gap: 10px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line-soft);
+        align-items: center;
+      }
+
+      .timeline-row:last-child {
+        border-bottom: 0;
+      }
+
+      .track-meta {
+        min-width: 0;
+      }
+
+      .track-meta strong {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .track-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .track-status .pill {
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: #262a30;
+        border: 1px solid var(--line);
+      }
+
+      .lane {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 8px;
+      }
+
+      .clip {
+        min-height: 48px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid #41464d;
+        background: #2b3035;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .clip.empty {
+        background: #22262a;
+        border-style: dashed;
+        color: #6e757f;
+      }
+
+      .clip.accent {
+        border-color: rgba(240, 138, 36, 0.55);
+        background: linear-gradient(180deg, #433224 0%, #342a22 100%);
+      }
+
+      .clip.success {
+        border-color: rgba(106, 163, 111, 0.55);
+        background: #2b342c;
+      }
+
+      .clip.warning {
+        border-color: rgba(202, 163, 100, 0.55);
+        background: #373126;
+      }
+
+      .clip strong {
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .clip span {
+        color: var(--text-muted);
+        font-size: 11px;
+      }
+
+      .track-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: flex-end;
+      }
+
+      .producer {
+        background: var(--bg-elevated);
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      .producer-header {
+        padding: 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .producer-header p {
+        margin: 6px 0 0;
+        color: var(--text-muted);
+      }
+
+      .producer-scroll {
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .meta-card,
+      .agent-card,
+      .suggestion-card {
+        padding: 12px;
+      }
+
+      .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .meta-stat {
+        padding: 10px;
+        background: var(--bg-panel-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .meta-stat span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .meta-stat strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 16px;
+      }
+
+      .agent-card {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .agent-info strong,
+      .suggestion-card strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .agent-info p,
+      .suggestion-card p {
+        font-size: 12px;
+      }
+
+      .state {
+        padding: 4px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        border: 1px solid var(--line);
+        background: #2a2e33;
+        color: var(--text-soft);
+      }
+
+      .state.running {
+        color: #f3c38f;
+        border-color: rgba(240, 138, 36, 0.4);
+        background: #35281f;
+      }
+
+      .state.done {
+        color: #bcd3be;
+        border-color: rgba(106, 163, 111, 0.4);
+        background: #253028;
+      }
+
+      .state.waiting {
+        color: #b9bec6;
+      }
+
+      .suggestion-card.active {
+        border-color: rgba(240, 138, 36, 0.45);
+        background: #292521;
+      }
+
+      .suggestion-foot {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+      }
+
+      .transport {
+        grid-column: 1 / -1;
+        background: #16181a;
+        border-top: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: 260px 1fr 340px;
+        align-items: center;
+        gap: 12px;
+        padding: 0 14px;
+        position: sticky;
+        bottom: 0;
+        z-index: 5;
+      }
+
+      .transport-group,
+      .transport-status,
+      .transport-actions,
+      .playback,
+      .bpm-box {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .transport-button {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--bg-panel);
+        color: var(--text-soft);
+        cursor: pointer;
+      }
+
+      .transport-button:hover {
+        background: var(--bg-panel-2);
+        color: var(--text);
+      }
+
+      .transport-button.play {
+        background: var(--accent);
+        color: #131416;
+        border-color: #d37a20;
+      }
+
+      .transport-timeline {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 6px;
+      }
+
+      .transport-timeline span {
+        height: 8px;
+        border-radius: 999px;
+        background: #282c31;
+      }
+
+      .transport-timeline span.active {
+        background: var(--accent);
+      }
+
+      .transport-label,
+      .bpm-box span,
+      .timeline-caption {
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      .timeline-caption strong {
+        color: var(--text-soft);
+        font-weight: 600;
+      }
+
+      @media (max-width: 1360px) {
+        .app {
+          grid-template-columns: 240px minmax(0, 1fr) 320px;
+        }
+
+        .timeline-head,
+        .timeline-row {
+          grid-template-columns: 170px 1fr 150px;
+        }
+      }
+
+      @media (max-width: 1120px) {
+        .app {
+          min-width: 1320px;
+          grid-template-columns: 240px minmax(720px, 1fr) 320px;
+        }
+
+        .topbar {
+          gap: 10px;
+          padding: 0 12px;
+        }
+
+        .transport {
+          grid-template-columns: 220px 1fr 280px;
+        }
+
+        .structure-bar {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 760px) {
+        .structure-bar,
+        .meta-grid,
+        .lane,
+        .timeline-ruler {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .track-controls {
+          justify-content: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark"></div>
+          <div class="brand-title">
+            <strong>MultiNeiroCreator</strong>
+            <span class="project-name">Project / Midnight Bloom EP / Scene 04</span>
+          </div>
+        </div>
+
+        <nav class="menu" aria-label="主菜单">
+          <button>File</button>
+          <button>Edit</button>
+          <button>Create</button>
+          <button>Agent</button>
+          <button>Export</button>
+          <button>Window</button>
+        </nav>
+
+        <div class="toolbar">
+          <div class="status-group">
+            <span class="status-chip"><span class="status-dot"></span>AI Ready</span>
+            <span class="status-chip">Sync Online</span>
+            <span class="status-chip">Render Idle</span>
+          </div>
+          <button class="ghost-button">Share</button>
+        </div>
+      </header>
+
+      <aside class="library">
+        <div class="panel-head">
+          <div>
+            <h2>Creative Module Library</h2>
+            <p>模块化创作能力与插件入口</p>
+          </div>
+          <button class="accent-button">Add Module</button>
+        </div>
+
+        <label class="search" aria-label="搜索模块">
+          <span>⌕</span>
+          <input type="text" value="Search modules, agents, plugins" />
+        </label>
+
+        <div class="category-list" id="category-list">
+          <div class="category-item active">
+            <div class="category-top">
+              <span class="category-name">Music</span>
+              <span class="category-count">6</span>
+            </div>
+            <div class="category-desc">Composer, Arrangement, MIDI, Mixing</div>
+          </div>
+          <div class="category-item">
+            <div class="category-top">
+              <span class="category-name">Vocal</span>
+              <span class="category-count">4</span>
+            </div>
+            <div class="category-desc">Generation, Conversion, Editing</div>
+          </div>
+          <div class="category-item">
+            <div class="category-top">
+              <span class="category-name">Lyrics</span>
+              <span class="category-count">3</span>
+            </div>
+            <div class="category-desc">Generation, Adaptation, Rhythm Matching</div>
+          </div>
+          <div class="category-item">
+            <div class="category-top">
+              <span class="category-name">Visual</span>
+              <span class="category-count">5</span>
+            </div>
+            <div class="category-desc">Illustration, Character, Background</div>
+          </div>
+          <div class="category-item">
+            <div class="category-top">
+              <span class="category-name">Video</span>
+              <span class="category-count">3</span>
+            </div>
+            <div class="category-desc">PV Generation, Motion, Edit</div>
+          </div>
+        </div>
+
+        <div class="module-scroll">
+          <div class="module-list">
+            <article class="module-card active">
+              <div class="module-card-head">
+                <div>
+                  <h3>Composer Agent</h3>
+                  <p>旋律结构、和声方向与段落草案生成</p>
+                </div>
+                <span class="tag">Installed</span>
+              </div>
+              <div class="module-card-foot">
+                <span class="module-state">Used in 3 tracks</span>
+                <div class="module-actions">
+                  <button class="mini-button">Open</button>
+                  <button class="mini-button">Pin</button>
+                </div>
+              </div>
+            </article>
+
+            <article class="module-card">
+              <div class="module-card-head">
+                <div>
+                  <h3>Arrangement Agent</h3>
+                  <p>负责段落能量设计、乐器层级与编曲版本管理</p>
+                </div>
+                <span class="tag">Core</span>
+              </div>
+              <div class="module-card-foot">
+                <span class="module-state">Available</span>
+                <div class="module-actions">
+                  <button class="mini-button">Open</button>
+                  <button class="mini-button">Load</button>
+                </div>
+              </div>
+            </article>
+
+            <article class="module-card">
+              <div class="module-card-head">
+                <div>
+                  <h3>MIDI Editor</h3>
+                  <p>编辑片段、音符修正与节奏对齐，不绑定特定业务模块</p>
+                </div>
+                <span class="tag">System</span>
+              </div>
+              <div class="module-card-foot">
+                <span class="module-state">Shared Tool</span>
+                <div class="module-actions">
+                  <button class="mini-button">Open</button>
+                </div>
+              </div>
+            </article>
+
+            <article class="module-card">
+              <div class="module-card-head">
+                <div>
+                  <h3>Mix Agent</h3>
+                  <p>平衡乐器密度、空间层次与最终监听兼容性</p>
+                </div>
+                <span class="tag">Plugin</span>
+              </div>
+              <div class="module-card-foot">
+                <span class="module-state">Waiting</span>
+                <div class="module-actions">
+                  <button class="mini-button">Install</button>
+                  <button class="mini-button">Pin</button>
+                </div>
+              </div>
+            </article>
+
+            <article class="module-card">
+              <div class="module-card-head">
+                <div>
+                  <h3>Game Music Agent</h3>
+                  <p>未来扩展模块示例，用于证明 UI 不是围绕固定四功能设计</p>
+                </div>
+                <span class="tag">Future</span>
+              </div>
+              <div class="module-card-foot">
+                <span class="module-state">Plugin Ready</span>
+                <div class="module-actions">
+                  <button class="mini-button">Preview</button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <div class="library-foot">
+          <div class="plugin-box">
+            <strong>Plugin Module API</strong>
+            <p>新增 Agent 或工具时，只需注册模块，不需要重新设计工作站布局。</p>
+            <button class="secondary-button">Plugin Manager</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <div class="workspace-top">
+          <div>
+            <h1>Creative Workspace</h1>
+            <p>以完整作品工程为中心，而不是围绕几个固定 AI 功能卡片。</p>
+          </div>
+          <div class="workspace-actions">
+            <button class="ghost-button">New Track</button>
+            <button class="ghost-button">Add Section</button>
+            <button class="secondary-button">Agent Routing</button>
+            <button class="accent-button">Run Selected Agents</button>
+          </div>
+        </div>
+
+        <div class="structure-bar">
+          <div class="section-block">
+            <strong>Intro</strong>
+            <span>4 bars</span>
+          </div>
+          <div class="section-block">
+            <strong>Verse</strong>
+            <span>8 bars</span>
+          </div>
+          <div class="section-block">
+            <strong>Pre-Chorus</strong>
+            <span>4 bars</span>
+          </div>
+          <div class="section-block">
+            <strong>Chorus</strong>
+            <span>8 bars</span>
+          </div>
+          <div class="section-block">
+            <strong>Bridge</strong>
+            <span>4 bars</span>
+          </div>
+          <div class="section-block">
+            <strong>Final Chorus</strong>
+            <span>8 bars</span>
+          </div>
+        </div>
+
+        <div class="workspace-scroll">
+          <section class="workspace-panel">
+            <div class="timeline-head">
+              <div class="timeline-caption">
+                <strong>Track / Object</strong>
+              </div>
+              <div class="timeline-ruler">
+                <span>01</span>
+                <span>05</span>
+                <span>09</span>
+                <span>13</span>
+                <span>17</span>
+                <span>21</span>
+                <span>25</span>
+                <span>29</span>
+              </div>
+              <div class="timeline-caption">
+                <strong>Actions</strong>
+              </div>
+            </div>
+
+            <div class="timeline-list">
+              <div class="timeline-row">
+                <div class="track-meta">
+                  <strong>Music Track</strong>
+                  <p>Composer Agent / Arrangement Agent</p>
+                  <div class="track-status">
+                    <span class="pill">Running</span>
+                    <span>当前在生成副歌展开版本</span>
+                  </div>
+                </div>
+                <div class="lane">
+                  <div class="clip accent"><strong>Sketch</strong><span>Intro Motif</span></div>
+                  <div class="clip success"><strong>Approved</strong><span>Verse Base</span></div>
+                  <div class="clip warning"><strong>Review</strong><span>Lift Needed</span></div>
+                  <div class="clip accent"><strong>Active</strong><span>Chorus V2</span></div>
+                  <div class="clip empty"><strong>Bridge</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Drop</strong><span>Open Slot</span></div>
+                  <div class="clip empty"><strong>Outro</strong><span>Open Slot</span></div>
+                  <div class="clip empty"><strong>Alt Mix</strong><span>Optional</span></div>
+                </div>
+                <div class="track-controls">
+                  <button class="track-action">Run Agent</button>
+                  <button class="track-action">Lock</button>
+                  <button class="track-action">Params</button>
+                </div>
+              </div>
+
+              <div class="timeline-row">
+                <div class="track-meta">
+                  <strong>Vocal Track</strong>
+                  <p>Vocal Synth Agent / Voice Conversion</p>
+                  <div class="track-status">
+                    <span class="pill">Waiting</span>
+                    <span>等待主旋律与歌词确定</span>
+                  </div>
+                </div>
+                <div class="lane">
+                  <div class="clip empty"><strong>Draft</strong><span>Need Input</span></div>
+                  <div class="clip empty"><strong>Verse Vox</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Pre Hook</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Hook Lead</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Bridge</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Double</strong><span>Optional</span></div>
+                  <div class="clip empty"><strong>Harmony</strong><span>Optional</span></div>
+                  <div class="clip empty"><strong>FX Vox</strong><span>Optional</span></div>
+                </div>
+                <div class="track-controls">
+                  <button class="track-action">Assign Agent</button>
+                  <button class="track-action">Template</button>
+                </div>
+              </div>
+
+              <div class="timeline-row">
+                <div class="track-meta">
+                  <strong>Lyrics Track</strong>
+                  <p>Lyrics Generation / Rhythm Matching</p>
+                  <div class="track-status">
+                    <span class="pill">Completed</span>
+                    <span>已生成 2 版候选并完成韵脚分析</span>
+                  </div>
+                </div>
+                <div class="lane">
+                  <div class="clip success"><strong>Theme</strong><span>Locked</span></div>
+                  <div class="clip success"><strong>Verse A</strong><span>Matched</span></div>
+                  <div class="clip warning"><strong>Pre</strong><span>Syllable Dense</span></div>
+                  <div class="clip success"><strong>Chorus</strong><span>Approved</span></div>
+                  <div class="clip empty"><strong>Bridge</strong><span>Rewrite?</span></div>
+                  <div class="clip empty"><strong>Final</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Alt CN</strong><span>Optional</span></div>
+                  <div class="clip empty"><strong>JP Adapt</strong><span>Future</span></div>
+                </div>
+                <div class="track-controls">
+                  <button class="track-action">Explain</button>
+                  <button class="track-action">Regenerate</button>
+                  <button class="track-action">Lock</button>
+                </div>
+              </div>
+
+              <div class="timeline-row">
+                <div class="track-meta">
+                  <strong>Visual Track</strong>
+                  <p>Illustration / Character Design / Background</p>
+                  <div class="track-status">
+                    <span class="pill">Queued</span>
+                    <span>等待风格板与角色设定确认</span>
+                  </div>
+                </div>
+                <div class="lane">
+                  <div class="clip empty"><strong>Moodboard</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Character</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>BG 01</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>BG 02</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>FX Pack</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Still Cut</strong><span>Optional</span></div>
+                  <div class="clip empty"><strong>Live2D</strong><span>Future</span></div>
+                  <div class="clip empty"><strong>Promo Art</strong><span>Future</span></div>
+                </div>
+                <div class="track-controls">
+                  <button class="track-action">Create Task</button>
+                  <button class="track-action">Attach Ref</button>
+                </div>
+              </div>
+
+              <div class="timeline-row">
+                <div class="track-meta">
+                  <strong>Video Track</strong>
+                  <p>PV Generation / Motion Design</p>
+                  <div class="track-status">
+                    <span class="pill">Waiting</span>
+                    <span>依赖 Visual 与 Chorus 节点完成</span>
+                  </div>
+                </div>
+                <div class="lane">
+                  <div class="clip empty"><strong>Shot List</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Verse Cut</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Hook Motion</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Lyric FX</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Bridge Cut</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Ending</strong><span>Pending</span></div>
+                  <div class="clip empty"><strong>Short Clip</strong><span>Optional</span></div>
+                  <div class="clip empty"><strong>Alt Edit</strong><span>Future</span></div>
+                </div>
+                <div class="track-controls">
+                  <button class="track-action">Queue Agent</button>
+                  <button class="track-action">Preview</button>
+                </div>
+              </div>
+
+              <div class="timeline-row">
+                <div class="track-meta">
+                  <strong>Agent Track</strong>
+                  <p>跨模块协作流程与自动化编排</p>
+                  <div class="track-status">
+                    <span class="pill">Orchestrating</span>
+                    <span>控制 Composer -> Lyrics -> Vocal -> Mix</span>
+                  </div>
+                </div>
+                <div class="lane">
+                  <div class="clip accent"><strong>Plan</strong><span>Ready</span></div>
+                  <div class="clip accent"><strong>Composer</strong><span>Running</span></div>
+                  <div class="clip success"><strong>Lyrics</strong><span>Done</span></div>
+                  <div class="clip warning"><strong>Vocal</strong><span>Blocked</span></div>
+                  <div class="clip empty"><strong>Mix</strong><span>Waiting</span></div>
+                  <div class="clip empty"><strong>Master</strong><span>Waiting</span></div>
+                  <div class="clip empty"><strong>Export</strong><span>Waiting</span></div>
+                  <div class="clip empty"><strong>Archive</strong><span>Optional</span></div>
+                </div>
+                <div class="track-controls">
+                  <button class="track-action">Open Flow</button>
+                  <button class="track-action">Retry</button>
+                  <button class="track-action">Logs</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <aside class="producer">
+        <div class="producer-header">
+          <h2>AI Producer Panel</h2>
+          <p>AI 作为制作人助手，负责分析、调度、建议，而不是普通聊天机器人。</p>
+        </div>
+
+        <div class="producer-scroll">
+          <section class="meta-card">
+            <h3>Project Analysis</h3>
+            <p>当前工程概览与创作上下文</p>
+            <div class="meta-grid">
+              <div class="meta-stat">
+                <span>Style</span>
+                <strong>Electro Pop</strong>
+              </div>
+              <div class="meta-stat">
+                <span>BPM</span>
+                <strong>124</strong>
+              </div>
+              <div class="meta-stat">
+                <span>Key</span>
+                <strong>E Minor</strong>
+              </div>
+              <div class="meta-stat">
+                <span>Mood</span>
+                <strong>Melancholic Bright</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="meta-card">
+            <h3>References</h3>
+            <p>参考作品、声音目标与视觉方向</p>
+            <div class="project-meta">
+              <div class="meta-stat">
+                <span>Audio Ref</span>
+                <strong>03 Loaded</strong>
+              </div>
+              <div class="meta-stat">
+                <span>Visual Ref</span>
+                <strong>07 Boards</strong>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <div class="panel-head" style="margin-bottom: 8px;">
+              <div>
+                <div class="section-title">Agent Status</div>
+                <div class="section-caption">当前协作中的 Agent 队列</div>
+              </div>
+            </div>
+            <div class="agent-list">
+              <article class="agent-card">
+                <div class="agent-info">
+                  <strong>Composer Agent</strong>
+                  <p>正在生成副歌展开与过门过渡</p>
+                </div>
+                <span class="state running">Running</span>
+              </article>
+              <article class="agent-card">
+                <div class="agent-info">
+                  <strong>Lyrics Agent</strong>
+                  <p>已完成 2 版候选并标记问题段落</p>
+                </div>
+                <span class="state done">Completed</span>
+              </article>
+              <article class="agent-card">
+                <div class="agent-info">
+                  <strong>Vocal Agent</strong>
+                  <p>等待 Hook 区段最终旋律锁定</p>
+                </div>
+                <span class="state waiting">Waiting</span>
+              </article>
+              <article class="agent-card">
+                <div class="agent-info">
+                  <strong>Mix Agent</strong>
+                  <p>等待主轨和声部稳定后进入处理</p>
+                </div>
+                <span class="state waiting">Waiting</span>
+              </article>
+            </div>
+          </section>
+
+          <section>
+            <div class="panel-head" style="margin-bottom: 8px;">
+              <div>
+                <div class="section-title">AI Suggestions</div>
+                <div class="section-caption">面向工程质量的具体建议</div>
+              </div>
+            </div>
+            <div class="suggestion-list" id="suggestion-list">
+              <article class="suggestion-card active">
+                <strong>副歌能量不足</strong>
+                <p>当前 Chorus 的动态抬升不明显，建议增加和声层或切换鼓组编排。</p>
+                <div class="suggestion-foot">
+                  <button class="accent-button">Apply Suggestion</button>
+                  <button class="secondary-button">Explain</button>
+                  <button class="ghost-button">Reject</button>
+                </div>
+              </article>
+
+              <article class="suggestion-card">
+                <strong>歌词音节密度偏高</strong>
+                <p>Pre-Chorus 第 3 小节辅音过密，可能影响虚拟歌姬发音自然度。</p>
+                <div class="suggestion-foot">
+                  <button class="secondary-button">Apply</button>
+                  <button class="ghost-button">Explain</button>
+                  <button class="ghost-button">Reject</button>
+                </div>
+              </article>
+
+              <article class="suggestion-card">
+                <strong>编曲频段占用过满</strong>
+                <p>Verse 与 Chorus 的中频乐器层过于接近，后续混音空间可能不足。</p>
+                <div class="suggestion-foot">
+                  <button class="secondary-button">Apply</button>
+                  <button class="ghost-button">Explain</button>
+                  <button class="ghost-button">Reject</button>
+                </div>
+              </article>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <footer class="transport">
+        <div class="transport-group">
+          <button class="transport-button">|&lt;</button>
+          <button class="transport-button play">▶</button>
+          <button class="transport-button">■</button>
+          <button class="transport-button">●</button>
+          <span class="transport-label">Bar 13.2.04</span>
+        </div>
+
+        <div class="playback">
+          <div class="transport-timeline">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span class="active"></span>
+            <span class="active"></span>
+            <span class="active"></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <span class="transport-label">Preview Timeline</span>
+        </div>
+
+        <div class="transport-actions">
+          <div class="bpm-box">
+            <span>BPM</span>
+            <strong>124</strong>
+          </div>
+          <button class="secondary-button">Preview</button>
+          <button class="secondary-button">Loop</button>
+          <button class="accent-button">Render</button>
+        </div>
+      </footer>
+    </div>
+
+    <script>
+      const categories = document.querySelectorAll(".category-item");
+      const suggestions = document.querySelectorAll(".suggestion-card");
+
+      categories.forEach((item) => {
+        item.addEventListener("click", () => {
+          categories.forEach((node) => node.classList.remove("active"));
+          item.classList.add("active");
+        });
+      });
+
+      suggestions.forEach((item) => {
+        item.addEventListener("click", () => {
+          suggestions.forEach((node) => node.classList.remove("active"));
+          item.classList.add("active");
+        });
+      });
+    </script>
+  </body>
+</html>
