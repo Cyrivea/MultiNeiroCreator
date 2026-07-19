@@ -29,6 +29,7 @@ dist/
 workspace/
 .trae/
 frontend/MultiNeiroCreator/
+garden-skills/
 
 # ===== 操作系统垃圾文件 =====
 .DS_Store
