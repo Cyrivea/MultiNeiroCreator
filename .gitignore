@@ -26,6 +26,9 @@ data/
 # ===== 前端依赖与构建产物 =====
 node_modules/
 dist/
+workspace/
+.trae/
+frontend/MultiNeiroCreator/
 
 # ===== 操作系统垃圾文件 =====
 .DS_Store

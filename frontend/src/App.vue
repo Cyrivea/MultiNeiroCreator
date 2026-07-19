@@ -1,16 +1,22 @@
 <template>
   <div class="app">
-    <ParticleBackground />
+    <ParticleBackground v-if="showParticleBackground" />
     <router-view v-slot="{ Component }">
       <transition name="page" mode="out-in">
-        <component :is="Component" />
+        <component :is="Component" :key="route.fullPath" />
       </transition>
     </router-view>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import ParticleBackground from '@/components/ParticleBackground.vue'
+
+const route = useRoute()
+
+const showParticleBackground = computed(() => route.path === '/' || route.path === '/login')
 </script>
 
 <style>
