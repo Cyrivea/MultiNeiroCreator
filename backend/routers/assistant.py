@@ -45,4 +45,4 @@ async def clear_history_route(user=Depends(verify_token)):
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...), user=Depends(verify_token)):
-    return await upload_document(file)
+    return await upload_document(file, user["id"])

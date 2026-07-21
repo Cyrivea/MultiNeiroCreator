@@ -1,97 +1,201 @@
 <template>
-  <canvas ref="canvas" class="particle-canvas" />
+  <div class="particle-background" aria-hidden="true">
+    <canvas ref="canvas" class="particle-canvas" />
+    <div class="particle-vignette"></div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
+
+interface ParticleNode {
+  homeX: number
+  homeY: number
+  x: number
+  y: number
+  vx: number
+  vy: number
+  radius: number
+  alpha: number
+  phase: number
+  drift: number
+}
 
 const canvas = ref<HTMLCanvasElement | null>(null)
-let animId = 0
-const mouse = { x: -9999, y: -9999 }
+let animationFrameId = 0
+const pointer = { x: -9999, y: -9999, targetX: -9999, targetY: -9999, active: false }
 
 function initParticles() {
-  const c = canvas.value
-  if (!c) return
-  const ctx = c.getContext('2d')!
-  let W = c.width = window.innerWidth
-  let H = c.height = window.innerHeight
+  const element = canvas.value
+  if (!element) return
 
-  type P = { x: number; y: number; vx: number; vy: number; ox: number; oy: number; r: number; a: number }
-  const particles: P[] = []
-  const COUNT = 400
+  const context = element.getContext('2d')
+  if (!context) return
 
-  for (let i = 0; i < COUNT; i++) {
-    const x = Math.random() * W
-    const y = Math.random() * H
-    particles.push({
-      x, y, ox: x, oy: y,
-      vx: (Math.random() - 0.5) * 1.0,
-      vy: (Math.random() - 0.5) * 1.0,
-      r: Math.random() * 1.8 + 0.4,
-      a: Math.random() * 0.4 + 0.15,
-    })
+  const dpr = Math.min(window.devicePixelRatio || 1, 2)
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const nodes: ParticleNode[] = []
+
+  let width = 0
+  let height = 0
+  let time = 0
+
+  const resize = () => {
+    width = window.innerWidth
+    height = window.innerHeight
+    element.width = Math.round(width * dpr)
+    element.height = Math.round(height * dpr)
+    element.style.width = `${width}px`
+    element.style.height = `${height}px`
+    context.setTransform(dpr, 0, 0, dpr, 0, 0)
   }
 
-  const REPEL_RADIUS = 120
-  const REPEL_STRENGTH = 6
+  const buildNodes = () => {
+    nodes.length = 0
+    const spacing = prefersReducedMotion ? 35 : Math.max(22, Math.min(30, width / 55))
 
-  const onResize = () => { W = c.width = window.innerWidth; H = c.height = window.innerHeight }
-  const onMouse = (e: MouseEvent) => { mouse.x = e.clientX; mouse.y = e.clientY }
-  window.addEventListener('resize', onResize)
-  window.addEventListener('mousemove', onMouse)
+    for (let y = spacing * 0.5; y < height + spacing; y += spacing) {
+      for (let x = spacing * 0.5; x < width + spacing; x += spacing) {
+        const homeX = x + (Math.random() - 0.5) * spacing * 0.45
+        const homeY = y + (Math.random() - 0.5) * spacing * 0.45
 
-  function draw() {
-    ctx.clearRect(0, 0, W, H)
-    for (const p of particles) {
-      p.ox += p.vx; p.oy += p.vy
-      if (p.ox < 0 || p.ox > W) p.vx *= -1
-      if (p.oy < 0 || p.oy > H) p.vy *= -1
-      const dx = p.ox - mouse.x
-      const dy = p.oy - mouse.y
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      if (dist < REPEL_RADIUS && dist > 0) {
-        const force = (1 - dist / REPEL_RADIUS) * REPEL_STRENGTH
-        p.x += (dx / dist) * force
-        p.y += (dy / dist) * force
-      }
-      p.x += (p.ox - p.x) * 0.08
-      p.y += (p.oy - p.y) * 0.08
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
-      ctx.fillStyle = `rgba(139,92,246,${p.a})`
-      ctx.fill()
-    }
-    for (let i = 0; i < particles.length; i++) {
-      for (let j = i + 1; j < particles.length; j++) {
-        const dx = particles[i].x - particles[j].x
-        const dy = particles[i].y - particles[j].y
-        const d = Math.sqrt(dx * dx + dy * dy)
-        if (d < 90) {
-          ctx.beginPath()
-          ctx.moveTo(particles[i].x, particles[i].y)
-          ctx.lineTo(particles[j].x, particles[j].y)
-          ctx.strokeStyle = `rgba(139,92,246,${0.12 * (1 - d / 90)})`
-          ctx.lineWidth = 0.5
-          ctx.stroke()
-        }
+        nodes.push({
+          homeX,
+          homeY,
+          x: homeX,
+          y: homeY,
+          vx: 0,
+          vy: 0,
+          radius: 0.8 + Math.random() * 1.5,
+          alpha: 0.2 + Math.random() * 0.6,
+          phase: Math.random() * Math.PI * 2,
+          drift: 1.2 + Math.random() * 3.0,
+        })
       }
     }
-    animId = requestAnimationFrame(draw)
   }
+
+  const onResize = () => {
+    resize()
+    buildNodes()
+  }
+
+  const onPointerMove = (event: MouseEvent) => {
+    pointer.targetX = event.clientX
+    pointer.targetY = event.clientY
+    if (!pointer.active) {
+      pointer.x = event.clientX
+      pointer.y = event.clientY
+    }
+    pointer.active = true
+  }
+
+  const onPointerLeave = () => {
+    pointer.active = false
+    pointer.targetX = -9999
+    pointer.targetY = -9999
+  }
+
+  const draw = () => {
+    context.clearRect(0, 0, width, height)
+    time += prefersReducedMotion ? 0.004 : 0.008
+
+    if (pointer.active) {
+      pointer.x += (pointer.targetX - pointer.x) * 0.12
+      pointer.y += (pointer.targetY - pointer.y) * 0.12
+    } else {
+      pointer.x += (-9999 - pointer.x) * 0.05
+      pointer.y += (-9999 - pointer.y) * 0.05
+    }
+
+    const repelRadius = 280
+    const repelStrength = 4.5
+    const springStrength = 0.028
+    const damping = 0.84
+
+    for (const node of nodes) {
+      const driftX = Math.sin(time + node.phase) * node.drift
+      const driftY = Math.cos(time * 0.75 + node.phase * 1.2) * node.drift * 0.8
+      const targetX = node.homeX + driftX
+      const targetY = node.homeY + driftY
+
+      const dx = node.x - pointer.x
+      const dy = node.y - pointer.y
+      const distance = Math.sqrt(dx * dx + dy * dy)
+
+      if (distance < repelRadius && distance > 0) {
+        const force = (1 - distance / repelRadius) ** 1.8 * repelStrength
+        node.vx += (dx / distance) * force
+        node.vy += (dy / distance) * force
+      }
+
+      node.vx += (targetX - node.x) * springStrength
+      node.vy += (targetY - node.y) * springStrength
+      node.vx *= damping
+      node.vy *= damping
+      node.x += node.vx
+      node.y += node.vy
+
+      context.beginPath()
+      context.arc(node.x, node.y, node.radius, 0, Math.PI * 2)
+      context.fillStyle = `rgba(255, 255, 255, ${node.alpha})`
+      context.fill()
+    }
+
+    animationFrameId = window.requestAnimationFrame(draw)
+  }
+
+  resize()
+  buildNodes()
   draw()
-  return () => { window.removeEventListener('resize', onResize); window.removeEventListener('mousemove', onMouse) }
+
+  window.addEventListener('resize', onResize)
+  window.addEventListener('mousemove', onPointerMove)
+  window.addEventListener('mouseleave', onPointerLeave)
+
+  return () => {
+    window.removeEventListener('resize', onResize)
+    window.removeEventListener('mousemove', onPointerMove)
+    window.removeEventListener('mouseleave', onPointerLeave)
+  }
 }
 
 let cleanup: (() => void) | undefined
-onMounted(() => { cleanup = initParticles() })
-onUnmounted(() => { cancelAnimationFrame(animId); cleanup?.() })
+
+onMounted(() => {
+  cleanup = initParticles()
+})
+
+onUnmounted(() => {
+  window.cancelAnimationFrame(animationFrameId)
+  cleanup?.()
+})
 </script>
 
 <style scoped>
-.particle-canvas {
+.particle-background {
   position: fixed;
   inset: 0;
-  pointer-events: none;
   z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.particle-canvas,
+.particle-vignette {
+  position: absolute;
+  inset: 0;
+}
+
+.particle-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.particle-vignette {
+  pointer-events: none;
+  background:
+    radial-gradient(circle at center, transparent 40%, rgba(0, 0, 0, 0.6) 100%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.4));
 }
 </style>

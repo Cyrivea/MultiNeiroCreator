@@ -6,17 +6,6 @@
 
 本地启动（已不再使用 Docker 或阿里云部署）。**前端和后端都要启动，缺一不可**。
 
-### 后端（FastAPI，提供 /auth、/chat 等 API，负责发邮箱验证码）
-
-```bash
-source ~/.venv/bin/activate
-cd ~/MultiNeiroCreator/backend
-uvicorn main:app --port 8000
-```
-
-- 注意：`backend/venv` 是坏的（无 bin 目录），依赖装在 `~/.venv` 里，要用它。
-- 前端 `vite.config.ts` 的 proxy 已把 `/api` 指向 `http://127.0.0.1:8000`。
-
 ### 前端（Vue + Vite）
 
 ```bash

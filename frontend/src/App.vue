@@ -16,7 +16,7 @@ import ParticleBackground from '@/components/ParticleBackground.vue'
 
 const route = useRoute()
 
-const showParticleBackground = computed(() => route.path === '/' || route.path === '/login')
+const showParticleBackground = computed(() => route.path === '/home' || route.path === '/login')
 </script>
 
 <style>
