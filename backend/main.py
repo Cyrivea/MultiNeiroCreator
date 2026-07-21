@@ -1,6 +1,6 @@
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI
-from services.rag_service import add_document, chunk_text, get_embedding, get_embeddings_batch, read_file, search
+
 from core.database import init_db
 from routers.assistant import router as assistant_router
 from routers.auth import router as auth_router

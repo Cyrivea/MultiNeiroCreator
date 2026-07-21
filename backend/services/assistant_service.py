@@ -9,7 +9,7 @@ from fastapi import HTTPException, UploadFile
 from agents.neyria import build_system_prompt, client, tools_map, tools_schema
 from repositories.chat_repo import append_message, clear_history as repo_clear_history, list_history
 from repositories.user_repo import get_profile, update_profile
-from services.rag_service import add_document, search
+from services.rag import add_document, search
 
 
 def load_profile(user_id: int) -> str:
@@ -29,14 +29,20 @@ def clear_history(user_id: int) -> dict:
     return {"status": "ok"}
 
 
-async def upload_document(file: UploadFile) -> dict:
+async def upload_document(file: UploadFile, user_id: int, project_id: int | None = None) -> dict:
     try:
         suffix = os.path.splitext(file.filename or "")[1]
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             content = await file.read()
             tmp.write(content)
             tmp_path = tmp.name
-        chunks_count = await asyncio.to_thread(add_document, tmp_path, file.filename or "upload.txt")
+        chunks_count = await asyncio.to_thread(
+            add_document,
+            tmp_path,
+            file.filename or "upload.txt",
+            user_id,
+            project_id,
+        )
         os.unlink(tmp_path)
         return {"status": "success", "message": f"成功导入文档: {file.filename}（共分切成 {chunks_count} 块）"}
     except Exception as exc:
@@ -48,7 +54,7 @@ async def stream_chat(user: dict, message: str, history: list[dict]) -> AsyncGen
         raise HTTPException(status_code=503, detail="未配置 API_KEY，聊天功能暂不可用")
 
     try:
-        docs = await asyncio.to_thread(search, message, n_results=3)
+        docs = await asyncio.to_thread(search, message, n_results=3, user_id=user["id"])
         context = "\n".join(docs) if docs else ""
     except Exception:
         context = ""
