@@ -204,7 +204,7 @@ async function submitLogin() {
     if (loginForm.remember) {
       localStorage.setItem('remember', '1')
     }
-    router.push('/workstation')
+    router.push('/loading?next=/workstation&mode=login')
   } catch (e: any) {
     loginError.value = e.response?.data?.detail || 'Login failed'
   } finally {
@@ -224,7 +224,7 @@ async function submitRegister() {
     const res = await register({ username: regForm.account, password: regForm.password, code: regForm.code })
     userStore.setUser(res.token, res.username)
     showToast('Registration successful')
-    setTimeout(() => router.push('/workstation'), 2000)
+    setTimeout(() => router.push('/loading?next=/workstation&mode=register'), 900)
   } catch (e: any) {
     regError.value = e.response?.data?.detail || 'Registration failed'
   } finally {
