@@ -22,6 +22,8 @@ data/
 
 # ===== 备份与临时文件 =====
 *.bak
+prototype/
+
 
 # ===== 前端依赖与构建产物 =====
 node_modules/
