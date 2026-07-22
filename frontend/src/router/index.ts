@@ -20,6 +20,12 @@ const router = createRouter({
       component: () => import('@/views/login/Login.vue'),
     },
     {
+      path: '/loading',
+      name: 'Loading',
+      component: () => import('@/views/loading/Loading.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/workstation',
       name: 'Workstation',
       component: () => import('@/views/workstation/Workstation.vue'),
