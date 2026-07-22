@@ -6,11 +6,11 @@
     <Transition name="intro-copy">
       <div v-if="introState === 'intro'" class="intro-copy">
         <div class="intro-kicker">AI Native Creative Workstation</div>
-        <h1 class="intro-title">Enter MultiNeiroCreator</h1>
+        <h1 class="intro-title">MultiNeiroCreator</h1>
         <p class="intro-description">
           Composition, lyrics, visuals, PV workflow, and Neyria live inside one creative surface.
         </p>
-        <button class="intro-button" type="button">开始进入</button>
+        
         <div class="intro-tip">Click anywhere to begin</div>
       </div>
     </Transition>
@@ -49,7 +49,7 @@ function initIntroBackground() {
 
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
   const nodes: IntroParticleNode[] = []
-  const totalParticles = 720
+  const totalParticles = 1720
 
   let width = 0
   let height = 0
