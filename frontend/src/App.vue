@@ -6,6 +6,8 @@
         <component :is="Component" :key="route.fullPath" />
       </transition>
     </router-view>
+    <!-- 全局过渡覆盖层：受 loading store 控制，与路由完全解耦 -->
+    <LoadingOverlay />
   </div>
 </template>
 
@@ -13,6 +15,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import ParticleBackground from '@/components/ParticleBackground.vue'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const route = useRoute()
 

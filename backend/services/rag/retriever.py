@@ -1,10 +1,9 @@
 import hashlib
 
-from services.rag.vectorstore import build_metadata_filter
+from services.rag.vectorstore import vectorstore
 
 
 def add_indexed_document(
-    collection,
     filename: str,
     chunks: list[str],
     embeddings: list,
@@ -25,20 +24,29 @@ def add_indexed_document(
         hashlib.md5(f"{filename}:{user_id}:{project_id}:{scope}:{index}".encode()).hexdigest()
         for index in range(len(chunks))
     ]
-    collection.add(documents=chunks, embeddings=embeddings, ids=ids, metadatas=metadatas)
+    vectorstore.add_documents(
+        documents=chunks,
+        embeddings=embeddings,
+        ids=ids,
+        metadatas=metadatas,
+    )
     return len(chunks)
 
 
 def retrieve_documents(
-    collection,
     query_embedding,
     n_results: int = 3,
     user_id: int | None = None,
     project_id: int | None = None,
     scope: str = "assistant",
 ) -> list[str]:
-    where = build_metadata_filter(user_id=user_id, project_id=project_id, scope=scope)
-    results = collection.query(query_embeddings=[query_embedding], n_results=n_results, where=where)
+    results = vectorstore.query(
+        query_embeddings=[query_embedding],
+        n_results=n_results,
+        user_id=user_id,
+        project_id=project_id,
+        scope=scope,
+    )
     if not results or not results.get("documents") or not results["documents"][0]:
         return []
     return results["documents"][0]
