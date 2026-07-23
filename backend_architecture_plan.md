@@ -188,3 +188,69 @@ MultiNeiroCreator 下一步的后端核心，不是继续往老 `main.py` 补功
 - AI 助手
 - 任务系统
 - 资产系统
+
+
+
+- P0：先把 RAG 补到可长期用
+- 加 RAG health check
+- 加 document list/delete/replace/reindex
+- 把 collection.add 改成“先删旧文档再写入”或显式 upsert 策略
+- 给 chunk 加 overlap，至少先做 chunk_size + chunk_overlap
+- P1：把单 agent 编排拆干净
+- 新建 services/agent/context_builder.py
+- 新建 services/agent/tool_executor.py
+- 新建 services/agent/chat_orchestrator.py
+- 新建 services/agent/history_service.py
+- 目标是把 stream_chat() 拆成：
+  
+  - 组装上下文
+  - 调模型首轮
+  - 执行 tool
+  - 二轮生成
+  - SSE 输出
+  - 持久化历史
+- P2：把 agent 从“写死”升级成“可注册”
+- 新建 agents/base.py
+- 新建 agents/registry.py
+- 新建 agents/factory.py
+- 先只注册一个 NeyriaAgent ，不要急着多 agent
+- 这样后面你再加“作词 agent / 编曲 agent / 项目管理 agent”时，不用再改主流程
+- P3：补 Agent 的上下文分层
+- 把上下文拆成四层：
+  
+  - system prompt
+  - user profile
+  - chat history
+  - rag context
+- 再加一层 project context
+- 这样 assistant 才能真正绑定工作站里的“当前项目”
+- P4：最后再考虑多 Agent / 路由
+- 只有当你已经明确有多个职责不同的 agent 时，再做：
+  
+  - agent router
+  - task dispatch
+  - agent handoff
+  - shared workspace state
+- 现在做这个会空转，收益低
+最实际的落地方案
+
+- 如果你要继续开发，我建议下一步直接做这 3 个文件：
+- backend/services/agent/context_builder.py
+- backend/services/agent/tool_executor.py
+- backend/services/agent/chat_orchestrator.py
+- 然后把现有 assistant_service.stream_chat() 改成一个很薄的门面，只负责调用编排器。
+你可以这样理解当前阶段
+
+- 你现在已经有了： 单 assistant + tools + RAG + history + profile
+- 你还没有： agent registry + agent runtime + project-aware context + document lifecycle + multi-agent dispatch
+- 所以下一步不是“继续拆文件”，而是 把 assistant_service 变成 agent runtime 的第一版内核
+建议你现在就做的第一项
+
+- 先做 assistant_service 拆分，而不是碰前端，也不是直接上多 agent。
+- 这是收益最高、风险最低的一步，做完之后整个后端会从“能跑”变成“能继续长”。
+如果你要，我下一步可以直接开始给你落地这一版：
+
+- 先把 assistant_service.py 拆成 context_builder + tool_executor + chat_orchestrator
+- 保持现有接口不变
+- 不动前端调用
+- 顺手把 RAG 的“重复上传同名文件”问题一起修掉。

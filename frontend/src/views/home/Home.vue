@@ -15,7 +15,7 @@
         </div>
 
         <div class="nav-actions">
-          <router-link to="/login" class="nav-link-button">Sign in</router-link>
+          <a class="nav-link-button" @click="openAuthEntry">Sign in</a>
           <button class="nav-menu-button" type="button">Menu</button>
         </div>
 
@@ -36,7 +36,7 @@
           <a href="#features" @click="menuOpen = false">Capabilities</a>
           <a href="#workflow" @click="menuOpen = false">Workflow</a>
           <a href="#about" @click="menuOpen = false">About</a>
-          <router-link to="/login" @click="menuOpen = false">Open Workstation</router-link>
+          <a class="nav-mobile-link" @click="openAuthEntry">Open Workstation</a>
         </div>
       </Transition>
     </header>
@@ -57,7 +57,7 @@
             </p>
 
             <div class="hero-actions">
-              <router-link to="/login" class="hero-primary" v-ripple>Open Workstation</router-link>
+              <a class="hero-primary" @click="openAuthEntry" v-ripple>Open Workstation</a>
               <a href="#features" class="hero-secondary" v-ripple>Explore Capabilities</a>
               <a href="#workflow" class="hero-secondary" v-ripple>See Workflow</a>
             </div>
@@ -158,7 +158,7 @@
       <div class="shell-frame footer-frame">
         <div class="footer-brand">MultiNeiroCreator</div>
         <div class="footer-copy">AI native workstation for music, visuals, and agent-driven creation.</div>
-        <router-link to="/login" class="footer-button">Enter</router-link>
+        <a class="footer-button" @click="openAuthEntry">Enter</a>
       </div>
     </footer>
   </div>
@@ -166,9 +166,28 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
+import { useLoadingStore } from '@/stores/loading'
+import { TOKEN_KEY } from '@/constants'
+
+const router = useRouter()
+const userStore = useUserStore()
+const loadingStore = useLoadingStore()
 
 const menuOpen = ref(false)
 const isScrolled = ref(false)
+
+// 已登录用户点击 "Sign in / Open Workstation" 入口：
+// 直接拉起覆盖层，再切到工作站，不让用户再过一次登录表单。
+function openAuthEntry() {
+  if (userStore.token || localStorage.getItem(TOKEN_KEY)) {
+    loadingStore.show('auto')
+    router.push('/workstation')
+    return
+  }
+  router.push('/login')
+}
 
 const sideFilters = ['Composer', 'Lyrics', 'Visual', 'Video', 'Workflow']
 

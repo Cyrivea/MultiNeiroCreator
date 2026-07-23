@@ -20,12 +20,6 @@ const router = createRouter({
       component: () => import('@/views/login/Login.vue'),
     },
     {
-      path: '/loading',
-      name: 'Loading',
-      component: () => import('@/views/loading/Loading.vue'),
-      meta: { requiresAuth: true },
-    },
-    {
       path: '/workstation',
       name: 'Workstation',
       component: () => import('@/views/workstation/Workstation.vue'),
@@ -36,13 +30,15 @@ const router = createRouter({
 
 router.beforeEach((to, _, next) => {
   const token = localStorage.getItem(TOKEN_KEY)
+
+  // 受保护页面：未登录 -> 去 /login
   if (to.meta.requiresAuth && !token) {
     next('/login')
-  } else if (to.path === '/login' && token) {
-    next('/workstation')
-  } else {
-    next()
+    return
   }
+
+  // 已登录访问 /login：直接放行到登录页，由登录页/调用方决定是否触发覆盖层
+  next()
 })
 
 export default router

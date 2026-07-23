@@ -398,6 +398,15 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getAgentHistory, streamAgentChat, type AgentHistoryItem } from '@/serve/agent'
 import { createAutoBackup, createProject, ensureAutoSaveProject, getRecentProjects, type ProjectPayload } from '@/serve/project'
+import { useLoadingStore } from '@/stores/loading'
+
+// 真实进度接管：让工作站初始化阶段能推动 loadingStore.setProgress()，
+// 覆盖层在 realProgress > 0 时无缝从内置 rAF 切到真实进度。
+const loadingStore = useLoadingStore()
+
+// emit:ready —— 核心资源初始化完成时通知外层淡出覆盖层。
+// 该事件与"是否加载成功"解耦（成功/失败都会发出），由父级 Workstation.vue 负责真正收起。
+const emit = defineEmits<{ (e: 'ready'): void }>()
 
 interface SearchItem {
   title: string
@@ -1069,11 +1078,23 @@ async function scrollAssistantToBottom() {
 
 async function loadAgentPanel() {
   try {
+    // 真实进度接管：进入 API 调用阶段，>0 即从内置 rAF 切到真实进度
+    loadingStore.setProgress(35)
+    loadingStore.setLabel('Loading conversation history')
     const history = await getAgentHistory()
     agentMessages.value = mapHistoryToAgentMessages(history)
     await scrollAssistantToBottom()
+    loadingStore.setProgress(95)
+    loadingStore.setLabel('Finalizing')
   } catch {
     agentMessages.value = []
+    loadingStore.setProgress(95)
+    loadingStore.setLabel('Finalizing')
+  } finally {
+    loadingStore.setProgress(100)
+    loadingStore.setLabel('Entering')
+    // 关键：核心资源加载完成（成功或失败都算"完成"）后通知外层淡出覆盖层。
+    emit('ready')
   }
 }
 

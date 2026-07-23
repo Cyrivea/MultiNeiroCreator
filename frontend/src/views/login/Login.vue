@@ -114,6 +114,7 @@
 import { ref, computed, reactive, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useLoadingStore } from '@/stores/loading'
 import { login, register, sendCode as sendCodeApi } from '@/serve/auth'
 
 // 描边眼睛图标（对齐首页无 emoji 风格）
@@ -145,6 +146,7 @@ const EyeIcon = (props: { open: boolean }) =>
 
 const router = useRouter()
 const userStore = useUserStore()
+const loadingStore = useLoadingStore()
 
 const mode = ref<'login' | 'register'>('login')
 const showPwd = ref(false)
@@ -200,11 +202,17 @@ async function submitLogin() {
   loginError.value = ''
   try {
     const res = await login({ username: loginForm.account, password: loginForm.password })
+    // 1) 先落库 token / username
     userStore.setUser(res.token, res.username)
+    // 2) 写 remember 标记（用于下次免登录场景判断）
     if (loginForm.remember) {
       localStorage.setItem('remember', '1')
+    } else {
+      localStorage.removeItem('remember')
     }
-    router.push('/loading?next=/workstation&mode=login')
+    // 3) 通过全局 loading store 触发覆盖层，登录态落库后再切路由
+    loadingStore.show('login')
+    router.push('/workstation')
   } catch (e: any) {
     loginError.value = e.response?.data?.detail || 'Login failed'
   } finally {
@@ -222,9 +230,14 @@ async function submitRegister() {
   regError.value = ''
   try {
     const res = await register({ username: regForm.account, password: regForm.password, code: regForm.code })
+    // 1) 注册成功立即落 token（与其他场景一致，避免漏动画）
     userStore.setUser(res.token, res.username)
+    localStorage.removeItem('remember')
+    // 2) toast 走当前页，覆盖层通过 store 触发；二者不抢同一渲染层
     showToast('Registration successful')
-    setTimeout(() => router.push('/loading?next=/workstation&mode=register'), 900)
+    // 3) 触发全局覆盖层，再切路由
+    loadingStore.show('register')
+    router.push('/workstation')
   } catch (e: any) {
     regError.value = e.response?.data?.detail || 'Registration failed'
   } finally {
