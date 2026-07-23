@@ -1,22 +1,40 @@
-from zhipuai import ZhipuAI
+from google import genai
 
-from core.config import API_KEY
+from core.config import EMBEDDING_API_KEY
 
-
-client_ai = ZhipuAI(api_key=API_KEY) if API_KEY else None
+client_ai = (
+    genai.Client(api_key=EMBEDDING_API_KEY)
+    if EMBEDDING_API_KEY
+    else None
+)
 
 
 def get_embedding(text: str):
     if client_ai is None:
         raise RuntimeError("未配置 API_KEY，RAG 向量检索暂不可用")
-    response = client_ai.embeddings.create(model="embedding-3", input=text)
-    return response.data[0].embedding
+
+    result = client_ai.models.embed_content(
+        model="gemini-embedding-001",
+        contents=text,
+    )
+
+    return result.embeddings[0].values
 
 
-def get_embeddings_batch(texts: list[str]) -> list:
+def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
+
     if client_ai is None:
         raise RuntimeError("未配置 API_KEY，文档向量化暂不可用")
-    response = client_ai.embeddings.create(model="embedding-3", input=texts)
-    return [item.embedding for item in response.data]
+
+    embeddings = []
+
+    for text in texts:
+        result = client_ai.models.embed_content(
+            model="gemini-embedding-001",
+            contents=text,
+        )
+        embeddings.append(result.embeddings[0].values)
+
+    return embeddings

@@ -19,3 +19,4 @@ SECRET_KEY = os.getenv("SECRET_KEY", "multineirocreator-secret-key-change-in-pro
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
 API_KEY = os.getenv("API_KEY", "").strip()
+EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", "").strip()
