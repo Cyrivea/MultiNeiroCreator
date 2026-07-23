@@ -156,9 +156,13 @@ def ensure_project_for_auto_save(
     project_meta["version"] = project_meta.get("version") or "0.1.0"
 
     meta_file.write_text(json.dumps(project_meta, ensure_ascii=False, indent=2), encoding="utf-8")
-    _sync_existing_project_save_mode(user_id, project_dir, save_mode, timestamp)
+    project_id = _sync_existing_project_save_mode(user_id, project_dir, project_meta["name"], save_mode, timestamp)
+    if project_id is not None:
+        project_meta["id"] = project_id
+        meta_file.write_text(json.dumps(project_meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     return {
+        "id": project_id,
         "name": project_meta["name"],
         "project_path": str(project_dir),
         "save_mode": save_mode,
@@ -249,18 +253,41 @@ def _read_project_meta(meta_file: Path) -> dict:
         return {}
 
 
-def _sync_existing_project_save_mode(user_id: int, project_dir: Path, save_mode: str, timestamp: str) -> None:
+def _sync_existing_project_save_mode(
+    user_id: int,
+    project_dir: Path,
+    project_name: str,
+    save_mode: str,
+    timestamp: str,
+) -> int:
     conn = sqlite3.connect(DB_FILE)
-    conn.execute(
-        """
-        UPDATE projects
-        SET save_mode=?, updated_at=?
-        WHERE user_id=? AND project_path=?
-        """,
-        (save_mode, timestamp, user_id, str(project_dir)),
-    )
+    conn.row_factory = sqlite3.Row
+    existing = conn.execute(
+        "SELECT id FROM projects WHERE user_id=? AND project_path=?",
+        (user_id, str(project_dir)),
+    ).fetchone()
+    if existing:
+        conn.execute(
+            """
+            UPDATE projects
+            SET name=?, save_mode=?, updated_at=?, last_opened_at=?
+            WHERE id=?
+            """,
+            (project_name, save_mode, timestamp, timestamp, existing["id"]),
+        )
+        project_id = int(existing["id"])
+    else:
+        cursor = conn.execute(
+            """
+            INSERT INTO projects (user_id, name, project_path, save_mode, created_at, updated_at, last_opened_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, project_name, str(project_dir), save_mode, timestamp, timestamp, timestamp),
+        )
+        project_id = int(cursor.lastrowid)
     conn.commit()
     conn.close()
+    return project_id
 
 
 def _build_backup_file_name(project_name: str, timestamp: str) -> str:

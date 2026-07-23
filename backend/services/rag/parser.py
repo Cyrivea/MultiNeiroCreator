@@ -18,10 +18,26 @@ def read_file(file_path: str, filename: str) -> str:
     raise ValueError(f"不支持的文件类型：{ext}")
 
 
-def chunk_text(text: str, chunk_size: int = 500) -> list[str]:
+def chunk_text(text: str, chunk_size: int = 500, chunk_overlap: int = 100) -> list[str]:
+    if chunk_size <= 0:
+        raise ValueError("chunk_size 必须大于 0")
+    if chunk_overlap < 0:
+        raise ValueError("chunk_overlap 不能小于 0")
+    if chunk_overlap >= chunk_size:
+        raise ValueError("chunk_overlap 必须小于 chunk_size")
+
+    step = chunk_size - chunk_overlap
     chunks: list[str] = []
-    for index in range(0, len(text), chunk_size):
-        chunk = text[index : index + chunk_size].strip()
+    start = 0
+    text_length = len(text)
+
+    while start < text_length:
+        end = min(start + chunk_size, text_length)
+        chunk = text[start:end].strip()
         if chunk:
             chunks.append(chunk)
+        if end >= text_length:
+            break
+        start += step
+
     return chunks

@@ -9,6 +9,7 @@ export interface AgentHistoryItem {
 export interface AgentChatPayload {
   message: string
   history: AgentHistoryItem[]
+  project_id?: number | null
 }
 
 export interface AgentToolEvent {
@@ -29,7 +30,10 @@ export interface AgentDoneEvent {
 
 type AgentStreamEvent = AgentToolEvent | AgentContentEvent | AgentDoneEvent
 
-export const getAgentHistory = () => request.get<any, AgentHistoryItem[]>('/history')
+export const getAgentHistory = (projectId?: number | null) => {
+  const suffix = projectId != null ? `?project_id=${projectId}` : ''
+  return request.get<any, AgentHistoryItem[]>(`/history${suffix}`)
+}
 
 export async function streamAgentChat(
   payload: AgentChatPayload,
