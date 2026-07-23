@@ -26,11 +26,15 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
+            project_id INTEGER,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
+    if "project_id" not in columns:
+        conn.execute("ALTER TABLE messages ADD COLUMN project_id INTEGER")
     conn.commit()
     conn.close()

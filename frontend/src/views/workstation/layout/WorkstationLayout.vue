@@ -16,7 +16,7 @@
                 :aria-expanded="isProjectOpen"
                 @click.stop="toggleProjectPanel"
               >
-                <span class="combined-label">选择项目</span>
+                <span class="combined-label">{{ currentProjectTabLabel }}</span>
               </div>
               <div class="combined-divider" aria-hidden="true"></div>
               <div
@@ -159,7 +159,10 @@
               <div class="assistant-head">
                 <div class="assistant-head-top">
                   <div class="assistant-head-copy">
-                    <div class="assistant-title">Neyria</div>
+                    <div class="assistant-title-row">
+                      <div class="assistant-title">Neyria</div>
+                      <div class="assistant-presence" aria-hidden="true"></div>
+                    </div>
                     <div class="assistant-meta">为音乐续写篇章</div>
                   </div>
                   <div class="window-controls" aria-hidden="true">
@@ -173,24 +176,45 @@
 
               <div ref="assistantBodyRef" class="assistant-body">
                 <div v-if="!agentMessages.length" class="agent-empty">
+                  <div class="agent-empty-orbit" aria-hidden="true"></div>
                   <div class="agent-empty-title">Neyria 已就绪</div>
                   <div class="agent-empty-meta">现在可以直接描述你的创作目标、风格、结构或具体问题。</div>
                 </div>
 
-                <div v-else class="agent-message-list">
+                <TransitionGroup v-else name="agent-message-float" tag="div" class="agent-message-list">
                   <div
                     v-for="message in agentMessages"
                     :key="message.id"
                     class="agent-message"
                     :class="[`is-${message.role}`, { 'is-error': message.isError }]"
                   >
-                    <div v-if="message.toolName" class="agent-tool-chip">{{ formatToolName(message.toolName) }}</div>
-                    <div class="agent-message-bubble">{{ message.content || '...' }}</div>
+                    <div class="agent-message-meta">
+                      <div v-if="message.toolName" class="agent-tool-chip">{{ formatToolName(message.toolName) }}</div>
+                    </div>
+                    <div
+                      class="agent-message-bubble"
+                      :class="{ 'is-pending': message.isPending && !message.content }"
+                    >
+                      <template v-if="message.isPending && !message.content">
+                        <span class="agent-thinking-wave" aria-label="Thinking">
+                          <span
+                            v-for="(letter, index) in thinkingLetters"
+                            :key="`${message.id}-${index}`"
+                            class="agent-thinking-letter"
+                            :style="{ animationDelay: `${index * 0.06}s` }"
+                          >
+                            {{ letter }}
+                          </span>
+                        </span>
+                      </template>
+                      <template v-else>{{ message.content }}</template>
+                    </div>
                   </div>
-                </div>
+                </TransitionGroup>
 
-                <div v-if="isAgentSending && activeToolName" class="agent-status-line">
-                  正在调用 {{ formatToolName(activeToolName) }}
+                <div v-if="isAgentSending" class="agent-status-line">
+                  <span class="agent-status-pulse" aria-hidden="true"></span>
+                  {{ agentThinkingStatusText }}
                 </div>
               </div>
 
@@ -230,7 +254,7 @@
                         :disabled="isAgentSending || !agentInput.trim()"
                         @click="sendAgentMessage"
                       >
-                        {{ isAgentSending ? '...' : '↑' }}
+                        <span class="composer-action-icon">{{ isAgentSending ? '...' : '↑' }}</span>
                       </button>
                     </div>
                   </div>
@@ -395,6 +419,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getAgentHistory, streamAgentChat, type AgentHistoryItem } from '@/serve/agent'
 import { createAutoBackup, createProject, ensureAutoSaveProject, getRecentProjects, type ProjectPayload } from '@/serve/project'
@@ -403,6 +428,8 @@ import { useLoadingStore } from '@/stores/loading'
 // 真实进度接管：让工作站初始化阶段能推动 loadingStore.setProgress()，
 // 覆盖层在 realProgress > 0 时无缝从内置 rAF 切到真实进度。
 const loadingStore = useLoadingStore()
+const route = useRoute()
+const router = useRouter()
 
 // emit:ready —— 核心资源初始化完成时通知外层淡出覆盖层。
 // 该事件与"是否加载成功"解耦（成功/失败都会发出），由父级 Workstation.vue 负责真正收起。
@@ -424,6 +451,7 @@ interface AgentMessage {
   content: string
   toolName?: string | null
   isError?: boolean
+  isPending?: boolean
 }
 
 interface RecentProjectItem {
@@ -435,8 +463,10 @@ interface RecentProjectItem {
 }
 
 interface ProjectFileContent {
+  id?: number
   name: string
   save_mode?: string
+  created_at?: string
   created_at?: string
   updated_at?: string
   version?: string
@@ -478,6 +508,7 @@ const searchQuery = ref('')
 const createProjectStep = ref<1 | 2>(1)
 const newProjectName = ref('')
 const isCreatingProject = ref(false)
+const currentProjectId = ref<number | null>(null)
 const currentProjectName = ref('当前未命名工程')
 const currentProjectPath = ref<string | null>(null)
 const currentProjectDirectoryHandle = ref<BrowserDirectoryHandle | null>(null)
@@ -489,11 +520,20 @@ const agentInput = ref('')
 const agentMessages = ref<AgentMessage[]>([])
 const isAgentSending = ref(false)
 const activeToolName = ref('')
+const isAgentThinking = ref(false)
+const hasAgentStartedReplying = ref(false)
+const agentThinkingSeconds = ref(0)
 const isSaveModeApplying = ref(false)
+const AGENT_FIRST_TOKEN_TIMEOUT_MS = 10000
+const thinkingLetters = 'THINKING'.split('')
+const ACTIVE_PROJECT_STORAGE_KEY = 'mnc-active-project'
 let localRecentProjectId = -1
 let localAgentMessageId = 0
+let agentPanelLoadToken = 0
 let chatAbortController: AbortController | null = null
 let autoSaveTimer: number | null = null
+let agentThinkingTimer: number | null = null
+let agentFirstTokenTimeout: number | null = null
 
 const topbarCombinedRef = ref<HTMLElement | null>(null)
 const saveModeWrapRef = ref<HTMLElement | null>(null)
@@ -565,12 +605,58 @@ const currentSaveModeLabel = computed(() => {
   return labelMap[currentSaveMode.value]
 })
 
+const currentProjectTabLabel = computed(() => {
+  return currentProjectName.value?.trim() || '选择项目'
+})
+
 function openToolModal() {
   isToolModalOpen.value = true
 }
 
 function closeToolModal() {
   isToolModalOpen.value = false
+}
+
+function resetWorkspaceTransientState() {
+  isProjectOpen.value = false
+  isSearchOpen.value = false
+  isSaveModeOpen.value = false
+  searchQuery.value = ''
+  agentInput.value = ''
+  activeToolName.value = ''
+  chatAbortController?.abort('PROJECT_SWITCH')
+  chatAbortController = null
+  stopAgentThinking()
+  isAgentSending.value = false
+  agentMessages.value = []
+}
+
+function initializeEmptyAgentPanel() {
+  agentPanelLoadToken += 1
+  chatAbortController?.abort('PROJECT_SWITCH')
+  chatAbortController = null
+  stopAgentThinking()
+  isAgentSending.value = false
+  hasAgentStartedReplying.value = false
+  activeToolName.value = ''
+  agentInput.value = ''
+  agentMessages.value = []
+}
+
+async function navigateToProject(projectId: number | null) {
+  const currentProjectQuery = typeof route.query.project === 'string' ? route.query.project : null
+  const nextProjectQuery = projectId != null ? String(projectId) : 'default'
+  if (currentProjectQuery === nextProjectQuery) {
+    initializeEmptyAgentPanel()
+    resetWorkspaceTransientState()
+    void loadAgentPanel()
+    return
+  }
+
+  await router.replace({
+    path: '/workstation',
+    query: projectId != null ? { project: String(projectId) } : { project: 'default' },
+  })
 }
 
 async function toggleProjectPanel() {
@@ -628,11 +714,16 @@ async function handleOpenProjectPicker() {
 
 function handleOpenRecentProject(item: RecentProjectItem) {
   isProjectOpen.value = false
+  currentProjectId.value = item.id > 0 ? item.id : null
   currentProjectName.value = item.title
   currentProjectPath.value = item.projectPath
   currentProjectDirectoryHandle.value = null
   currentSaveMode.value = item.saveMode
   syncAutoSaveTimer(item.saveMode)
+  persistActiveProject()
+  initializeEmptyAgentPanel()
+  resetWorkspaceTransientState()
+  void navigateToProject(currentProjectId.value)
   ElMessage.success(`已打开项目：${item.title}`)
 }
 
@@ -710,13 +801,18 @@ async function createNamedProject() {
     formatRecentProject(project),
     ...recentProjects.value.filter(item => item.id !== project.id),
   ].slice(0, 8)
+  currentProjectId.value = project.id ?? null
   currentProjectName.value = project.name
   currentProjectPath.value = project.project_path
   currentProjectDirectoryHandle.value = null
   currentSaveMode.value = normalizeSaveMode(project.save_mode)
   syncAutoSaveTimer(currentSaveMode.value)
+  persistActiveProject()
+  initializeEmptyAgentPanel()
+  resetWorkspaceTransientState()
   closeCreateProjectFlow()
   ElMessage.success(`已创建项目：${project.name}`)
+  await navigateToProject(currentProjectId.value)
 }
 
 async function ensureCurrentProjectSaved() {
@@ -761,6 +857,7 @@ async function readProjectDirectory(directoryHandle: BrowserDirectoryHandle) {
     }
 
     return {
+      id: typeof parsed.id === 'number' ? parsed.id : undefined,
       name: parsed.name.trim(),
       projectPath: directoryHandle.name || '已选择项目文件夹',
       saveMode: typeof parsed.save_mode === 'string' ? parsed.save_mode : 'manual',
@@ -775,17 +872,19 @@ async function readProjectDirectory(directoryHandle: BrowserDirectoryHandle) {
 }
 
 function applyOpenedProject(
-  project: { name: string; projectPath: string; saveMode: string },
+  project: { id?: number; name: string; projectPath: string; saveMode: string },
   directoryHandle: BrowserDirectoryHandle | null = null,
 ) {
+  currentProjectId.value = project.id ?? null
   currentProjectName.value = project.name
   currentProjectPath.value = project.projectPath
   currentProjectDirectoryHandle.value = directoryHandle
   currentSaveMode.value = normalizeSaveMode(project.saveMode)
   syncAutoSaveTimer(currentSaveMode.value)
+  initializeEmptyAgentPanel()
 
   const nextItem: RecentProjectItem = {
-    id: localRecentProjectId--,
+    id: project.id ?? localRecentProjectId--,
     title: project.name,
     meta: `最近打开 · 刚刚 · ${project.projectPath}`,
     projectPath: project.projectPath,
@@ -796,6 +895,9 @@ function applyOpenedProject(
     nextItem,
     ...recentProjects.value.filter(item => item.title !== nextItem.title || item.projectPath !== nextItem.projectPath),
   ].slice(0, 8)
+  persistActiveProject()
+  resetWorkspaceTransientState()
+  void navigateToProject(currentProjectId.value)
 }
 
 async function loadRecentProjects() {
@@ -822,6 +924,49 @@ function formatProjectTime(value: string): string {
   const hours = String(parsed.getHours()).padStart(2, '0')
   const minutes = String(parsed.getMinutes()).padStart(2, '0')
   return `${month}-${date} ${hours}:${minutes}`
+}
+
+function persistActiveProject() {
+  if (!currentProjectName.value || !currentProjectPath.value) {
+    localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY)
+    return
+  }
+
+  localStorage.setItem(
+    ACTIVE_PROJECT_STORAGE_KEY,
+    JSON.stringify({
+      id: currentProjectId.value,
+      name: currentProjectName.value,
+      projectPath: currentProjectPath.value,
+      saveMode: currentSaveMode.value,
+    }),
+  )
+}
+
+function restoreActiveProjectFromStorage() {
+  const raw = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY)
+  if (!raw) return false
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      id?: number | null
+      name?: string
+      projectPath?: string
+      saveMode?: string
+    }
+    if (!parsed.name || !parsed.projectPath) return false
+
+    currentProjectId.value = typeof parsed.id === 'number' ? parsed.id : null
+    currentProjectName.value = parsed.name
+    currentProjectPath.value = parsed.projectPath
+    currentProjectDirectoryHandle.value = null
+    currentSaveMode.value = normalizeSaveMode(parsed.saveMode)
+    syncAutoSaveTimer(currentSaveMode.value)
+    return true
+  } catch {
+    localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY)
+    return false
+  }
 }
 
 const currentProjectDisplayName = computed(() => {
@@ -976,6 +1121,8 @@ async function ensureAutoSaveWorkspace(saveMode: Exclude<AutoSaveMode, 'manual'>
   currentProjectPath.value = project.project_path
   currentProjectDirectoryHandle.value = null
   currentSaveMode.value = normalizeSaveMode(project.save_mode)
+  currentProjectId.value = project.id ?? currentProjectId.value
+  persistActiveProject()
 }
 
 async function runAutoBackup() {
@@ -994,8 +1141,10 @@ async function runAutoBackup() {
       save_mode: activeMode,
     })
 
+    currentProjectId.value = project.id ?? currentProjectId.value
     currentProjectName.value = project.name
     currentProjectPath.value = project.project_path
+    persistActiveProject()
   } catch (error) {
     clearAutoSaveTimer()
     currentSaveMode.value = 'manual'
@@ -1070,6 +1219,57 @@ function formatToolName(toolName: string) {
   return toolMap[toolName] || toolName
 }
 
+function startAgentThinking() {
+  stopAgentThinking()
+  isAgentThinking.value = true
+  hasAgentStartedReplying.value = false
+  agentThinkingSeconds.value = 0
+  agentThinkingTimer = window.setInterval(() => {
+    agentThinkingSeconds.value += 1
+  }, 1000)
+}
+
+function markAgentReplyStarted() {
+  hasAgentStartedReplying.value = true
+}
+
+function stopAgentThinking() {
+  isAgentThinking.value = false
+  hasAgentStartedReplying.value = false
+  agentThinkingSeconds.value = 0
+  if (agentThinkingTimer !== null) {
+    window.clearInterval(agentThinkingTimer)
+    agentThinkingTimer = null
+  }
+  if (agentFirstTokenTimeout !== null) {
+    window.clearTimeout(agentFirstTokenTimeout)
+    agentFirstTokenTimeout = null
+  }
+}
+
+function isFirstTokenTimeoutError(error: unknown) {
+  if (chatAbortController?.signal.aborted && chatAbortController.signal.reason === 'FIRST_TOKEN_TIMEOUT') {
+    return true
+  }
+
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return true
+  }
+
+  if (error instanceof Error) {
+    return error.name === 'AbortError' || error.message.includes('aborted')
+  }
+
+  return false
+}
+
+const agentThinkingStatusText = computed(() => {
+  if (!isAgentSending.value) return ''
+  if (activeToolName.value) return `正在调用 ${formatToolName(activeToolName.value)}`
+  if (hasAgentStartedReplying.value) return `正在输出回复 · 已思考 ${agentThinkingSeconds.value}s`
+  return `正在思考 · 已思考 ${agentThinkingSeconds.value}s`
+})
+
 async function scrollAssistantToBottom() {
   await nextTick()
   if (!assistantBodyRef.value) return
@@ -1077,16 +1277,24 @@ async function scrollAssistantToBottom() {
 }
 
 async function loadAgentPanel() {
+  const currentLoadToken = ++agentPanelLoadToken
+  const targetProjectId = currentProjectId.value
   try {
     // 真实进度接管：进入 API 调用阶段，>0 即从内置 rAF 切到真实进度
     loadingStore.setProgress(35)
     loadingStore.setLabel('Loading conversation history')
-    const history = await getAgentHistory()
+    const history = await getAgentHistory(targetProjectId)
+    if (currentLoadToken !== agentPanelLoadToken || targetProjectId !== currentProjectId.value) {
+      return
+    }
     agentMessages.value = mapHistoryToAgentMessages(history)
     await scrollAssistantToBottom()
     loadingStore.setProgress(95)
     loadingStore.setLabel('Finalizing')
   } catch {
+    if (currentLoadToken !== agentPanelLoadToken) {
+      return
+    }
     agentMessages.value = []
     loadingStore.setProgress(95)
     loadingStore.setLabel('Finalizing')
@@ -1120,13 +1328,20 @@ async function sendAgentMessage() {
     role: 'assistant',
     content: '',
     toolName: null,
+    isPending: true,
   }
 
   agentMessages.value = [...agentMessages.value, userMessage, assistantMessage]
   agentInput.value = ''
   isAgentSending.value = true
   activeToolName.value = ''
+  startAgentThinking()
   chatAbortController = new AbortController()
+  agentFirstTokenTimeout = window.setTimeout(() => {
+    if (!hasAgentStartedReplying.value && chatAbortController) {
+      chatAbortController.abort('FIRST_TOKEN_TIMEOUT')
+    }
+  }, AGENT_FIRST_TOKEN_TIMEOUT_MS)
   await scrollAssistantToBottom()
 
   try {
@@ -1134,14 +1349,29 @@ async function sendAgentMessage() {
       {
         message,
         history,
+        project_id: currentProjectId.value,
       },
       {
         onTool(event) {
+          if (agentFirstTokenTimeout !== null) {
+            window.clearTimeout(agentFirstTokenTimeout)
+            agentFirstTokenTimeout = null
+          }
           activeToolName.value = event.tool_name
           assistantMessage.toolName = event.tool_name
           void scrollAssistantToBottom()
         },
         onContent(event) {
+          if (agentFirstTokenTimeout !== null) {
+            window.clearTimeout(agentFirstTokenTimeout)
+            agentFirstTokenTimeout = null
+          }
+          if (assistantMessage.isPending) {
+            assistantMessage.isPending = false
+          }
+          if (!hasAgentStartedReplying.value) {
+            markAgentReplyStarted()
+          }
           assistantMessage.content += event.content
           void scrollAssistantToBottom()
         },
@@ -1154,9 +1384,18 @@ async function sendAgentMessage() {
       chatAbortController.signal,
     )
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') return
+    if (isFirstTokenTimeoutError(error)) {
+      assistantMessage.isPending = false
+      assistantMessage.content = '10 秒内未收到模型返回，已自动暂停本次响应。请检查后端日志、接口耗时或重试。'
+      assistantMessage.isError = true
+      assistantMessage.toolName = null
+      ElMessage.error('10 秒内未收到模型返回，已自动暂停')
+      await scrollAssistantToBottom()
+      return
+    }
 
-    const errorMessage = error instanceof Error ? error.message : 'Agent 响应失败'
+    const errorMessage = error instanceof Error ? error.message : 'N 响应失败'
+    assistantMessage.isPending = false
     assistantMessage.content = errorMessage
     assistantMessage.isError = true
     assistantMessage.toolName = null
@@ -1165,6 +1404,7 @@ async function sendAgentMessage() {
   } finally {
     isAgentSending.value = false
     activeToolName.value = ''
+    stopAgentThinking()
     chatAbortController = null
   }
 }
@@ -1184,11 +1424,19 @@ function handleDocumentClick(event: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', handleDocumentClick)
+  restoreActiveProjectFromStorage()
+  if (typeof route.query.project === 'string' && route.query.project !== 'default') {
+    const routeProjectId = Number(route.query.project)
+    if (!Number.isNaN(routeProjectId)) {
+      currentProjectId.value = routeProjectId
+    }
+  }
   void loadAgentPanel()
 })
 
 onBeforeUnmount(() => {
   chatAbortController?.abort()
+  stopAgentThinking()
   clearAutoSaveTimer()
   document.removeEventListener('click', handleDocumentClick)
 })
@@ -1507,6 +1755,10 @@ onBeforeUnmount(() => {
   margin-top: 2px;
   font-size: 12px;
   color: #6f6f6f;
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .project-history-ellipsis {
@@ -1805,31 +2057,36 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 0;
   border-left: 1px solid var(--line) !important;
-  background: var(--column-bg);
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+    var(--column-bg);
 }
 
 .assistant-panel {
   height: 100%;
   display: grid;
   grid-template-rows: auto 1fr auto;
-  background: var(--column-bg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.014), rgba(255, 255, 255, 0)),
+    var(--column-bg);
   overflow: hidden;
 }
 
 .assistant-head {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 20px 0 8px;
+  gap: 10px;
+  padding: 18px 0 10px;
   background: var(--column-bg);
 }
 
 .assistant-head-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 10px 0 20px;
+  padding: 0 14px 0 18px;
 }
 
 .assistant-head-copy {
@@ -1837,30 +2094,48 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.assistant-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .assistant-title {
-  font-size: 19px;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.assistant-presence {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+  animation: assistant-presence-pulse 2.6s ease-in-out infinite;
 }
 
 .assistant-meta {
   font-size: 14px;
   color: var(--text-secondary);
+  margin-top: 4px;
 }
 
 .assistant-head-divider {
   width: auto;
-  margin: 0 5px;
+  margin: 0 6px;
   height: 1px;
-  background: var(--line);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
 }
 
 .assistant-body {
   min-height: 0;
   overflow: auto;
-  padding: 8px 10px 8px;
+  padding: 14px 14px 10px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   background: var(--column-bg);
+  scroll-behavior: smooth;
 }
 
 .agent-empty {
@@ -1872,6 +2147,33 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 20px 14px;
   text-align: center;
+}
+
+.agent-empty-orbit {
+  width: 60px;
+  height: 60px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.06), transparent 62%);
+}
+
+.agent-empty-orbit::before,
+.agent-empty-orbit::after {
+  content: '';
+  position: absolute;
+  inset: 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.agent-empty-orbit::after {
+  inset: -1px;
+  border-top-color: rgba(255, 255, 255, 0.36);
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  border-left-color: transparent;
+  animation: agent-empty-orbit-spin 5s linear infinite;
 }
 
 .agent-empty-title {
@@ -1890,13 +2192,15 @@ onBeforeUnmount(() => {
 .agent-message-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  padding-bottom: 4px;
 }
 
 .agent-message {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  will-change: transform, opacity, filter;
 }
 
 .agent-message.is-user {
@@ -1908,21 +2212,71 @@ onBeforeUnmount(() => {
   align-items: flex-start;
 }
 
+.agent-message-meta {
+  min-height: 16px;
+  display: flex;
+  align-items: center;
+}
+
 .agent-message-bubble {
-  max-width: 100%;
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.03);
+  max-width: min(92%, 100%);
+  padding: 11px 13px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.022)),
+    rgba(255, 255, 255, 0.02);
   color: var(--text-primary);
   font-size: 14px;
   line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.agent-message-bubble:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.agent-message-bubble.is-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 132px;
+  min-height: 48px;
+  padding-inline: 14px;
+}
+
+.agent-thinking-wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.agent-thinking-letter {
+  display: inline-block;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  animation: thinking-letter-wave 1.28s ease-in-out infinite;
+  will-change: transform, opacity;
 }
 
 .agent-message.is-user .agent-message-bubble {
-  background: rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.05)),
+    rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.09);
 }
 
 .agent-message.is-error .agent-message-bubble {
@@ -1937,45 +2291,96 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.agent-tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 1px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.agent-tool-chip::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
 .agent-status-line {
-  padding: 0 4px;
+  position: sticky;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 4px 0 0;
+  padding: 8px 10px 2px 4px;
+  color: rgba(255, 255, 255, 0.68);
+  background: linear-gradient(180deg, transparent, rgba(11, 11, 11, 0.92) 32%, rgba(11, 11, 11, 0.98));
+  pointer-events: none;
+}
+
+.agent-status-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  animation: agent-status-pulse 1.6s ease-in-out infinite;
 }
 
 .composer-wrap {
-  padding: 6px;
+  padding: 8px 10px 10px;
   border-top: 1px solid var(--line) !important;
-  background: var(--column-bg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.012), transparent),
+    var(--column-bg);
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
 .input-composer {
-  border: 1px solid rgba(40, 40, 40, 0.6) !important;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.015);
-  padding: 20px 12px 12px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.015)),
+    rgba(255, 255, 255, 0.012);
+  padding: 16px 12px 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   position: relative;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .input-composer:hover,
 .input-composer:focus-within {
-  background: var(--hover-bg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.022)),
+    rgba(255, 255, 255, 0.018);
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  transform: translateY(-1px);
 }
 
 .input-composer textarea {
-  min-height: 136px;
+  min-height: 120px;
   border: 0;
   outline: 0;
   resize: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 400;
-  line-height: 1.6;
+  line-height: 1.7;
   padding: 0;
   width: 100%;
   display: block;
@@ -2001,20 +2406,34 @@ onBeforeUnmount(() => {
 }
 
 .composer-action {
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
-  border-radius: 16px;
+  border-radius: 999px;
+}
+
+.composer-action-icon {
+  display: inline-block;
+  transition: transform 180ms ease, opacity 180ms ease;
 }
 
 .composer-action.primary {
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.04);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04)),
+    rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 
 .composer-action.primary:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.07)),
+    rgba(255, 255, 255, 0.08);
+}
+
+.composer-action.primary:hover .composer-action-icon {
+  transform: translateY(-1px) scale(1.04);
 }
 
 .composer-action:disabled {
@@ -2028,9 +2447,10 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: 0 8px;
-  border-radius: 16px;
+  border-radius: 999px;
   color: var(--text-secondary);
-  background: transparent;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent !important;
 }
 
 .composer-tool svg {
@@ -2039,22 +2459,150 @@ onBeforeUnmount(() => {
 }
 
 .composer-model-button {
-  min-width: 64px;
-  height: 38px;
+  min-width: 72px;
+  height: 40px;
   padding: 0 12px;
-  border-radius: 16px;
+  border-radius: 999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.04);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.028)),
+    rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
   color: var(--text-secondary);
   transition: background-color 150ms ease-out, color 180ms ease;
 }
 
 .composer-model-button:hover {
-  background: rgba(255, 255, 255, 0.12) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.05)),
+    rgba(255, 255, 255, 0.1) !important;
   color: var(--text-primary) !important;
   filter: none !important;
+}
+
+@media (max-width: 1480px) {
+  .assistant-head-top {
+    padding-inline: 12px;
+  }
+
+  .assistant-body {
+    padding-inline: 12px;
+  }
+
+  .composer-wrap {
+    padding-inline: 8px;
+  }
+
+  .agent-message-bubble {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 1320px) {
+  .assistant-title {
+    font-size: 18px;
+  }
+
+  .assistant-meta,
+  .agent-empty-meta,
+  .agent-message-bubble {
+    font-size: 13px;
+  }
+
+  .input-composer {
+    padding: 14px 10px 10px 14px;
+  }
+
+  .input-composer textarea {
+    min-height: 104px;
+    font-size: 15px;
+  }
+
+  .composer-model-button {
+    min-width: 64px;
+  }
+
+  .agent-status-line {
+    font-size: 11px;
+  }
+}
+
+@keyframes assistant-presence-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes agent-empty-orbit-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes thinking-letter-wave {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0);
+  }
+
+  35% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+
+  60% {
+    opacity: 0.7;
+    transform: translateY(1px);
+  }
+}
+
+@keyframes agent-status-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.agent-message-float-enter-active,
+.agent-message-float-leave-active {
+  transition:
+    opacity 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 320ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.agent-message-float-enter-from,
+.agent-message-float-leave-to {
+  opacity: 0;
+  transform: translateY(10px) scale(0.985);
+  filter: blur(6px);
+}
+
+.agent-message-float-enter-to,
+.agent-message-float-leave-from {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
 }
 
 .modal-overlay {

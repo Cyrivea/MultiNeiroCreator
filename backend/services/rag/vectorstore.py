@@ -20,6 +20,7 @@ class VectorStore:
         user_id: int | None = None,
         project_id: int | None = None,
         scope: str | None = None,
+        source: str | None = None,
     ):
         where: dict[str, int | str] = {}
         if user_id is not None:
@@ -28,6 +29,8 @@ class VectorStore:
             where["project_id"] = project_id
         if scope:
             where["scope"] = scope
+        if source:
+            where["source"] = source
         return where or None
 
     def add_documents(
@@ -50,8 +53,9 @@ class VectorStore:
         user_id: int | None = None,
         project_id: int | None = None,
         scope: str | None = None,
+        source: str | None = None,
     ) -> None:
-        where = self._build_metadata_filter(user_id, project_id, scope)
+        where = self._build_metadata_filter(user_id, project_id, scope, source)
         self.collection.delete(ids=ids, where=where)
 
     def query(
@@ -62,8 +66,9 @@ class VectorStore:
         user_id: int | None = None,
         project_id: int | None = None,
         scope: str | None = None,
+        source: str | None = None,
     ):
-        where = self._build_metadata_filter(user_id, project_id, scope)
+        where = self._build_metadata_filter(user_id, project_id, scope, source)
         return self.collection.query(
             query_embeddings=query_embeddings,
             query_texts=query_texts,
@@ -81,11 +86,26 @@ class VectorStore:
         user_id: int | None = None,
         project_id: int | None = None,
         scope: str | None = None,
+        source: str | None = None,
     ):
-        where = self._build_metadata_filter(user_id, project_id, scope)
+        where = self._build_metadata_filter(user_id, project_id, scope, source)
         return self.collection.get(
             limit=limit,
             offset=offset,
+            where=where,
+        )
+
+    def get_documents(
+        self,
+        ids: list[str] | None = None,
+        user_id: int | None = None,
+        project_id: int | None = None,
+        scope: str | None = None,
+        source: str | None = None,
+    ):
+        where = self._build_metadata_filter(user_id, project_id, scope, source)
+        return self.collection.get(
+            ids=ids,
             where=where,
         )
 

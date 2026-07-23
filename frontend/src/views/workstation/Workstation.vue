@@ -1,13 +1,16 @@
 <template>
-  <WorkstationLayout @ready="onLayoutReady" />
+  <WorkstationLayout :key="workstationKey" @ready="onLayoutReady" />
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import WorkstationLayout from './layout/WorkstationLayout.vue'
 import { useLoadingStore } from '@/stores/loading'
 
+const route = useRoute()
 const loadingStore = useLoadingStore()
+const workstationKey = computed(() => String(route.query.project ?? 'default'))
 
 // 工作站所有核心资源加载、初始化流程全部完成后，触发覆盖层优雅淡出。
 // 时机由 WorkstationLayout 在 loadAgentPanel 等关键流程完成后通过 emit('ready') 给出。

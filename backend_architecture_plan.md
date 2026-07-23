@@ -196,6 +196,7 @@ MultiNeiroCreator 下一步的后端核心，不是继续往老 `main.py` 补功
 - 加 document list/delete/replace/reindex
 - 把 collection.add 改成“先删旧文档再写入”或显式 upsert 策略
 - 给 chunk 加 overlap，至少先做 chunk_size + chunk_overlap
+
 - P1：把单 agent 编排拆干净
 - 新建 services/agent/context_builder.py
 - 新建 services/agent/tool_executor.py
@@ -209,12 +210,14 @@ MultiNeiroCreator 下一步的后端核心，不是继续往老 `main.py` 补功
   - 二轮生成
   - SSE 输出
   - 持久化历史
+
 - P2：把 agent 从“写死”升级成“可注册”
 - 新建 agents/base.py
 - 新建 agents/registry.py
 - 新建 agents/factory.py
 - 先只注册一个 NeyriaAgent ，不要急着多 agent
 - 这样后面你再加“作词 agent / 编曲 agent / 项目管理 agent”时，不用再改主流程
+
 - P3：补 Agent 的上下文分层
 - 把上下文拆成四层：
   
@@ -224,6 +227,7 @@ MultiNeiroCreator 下一步的后端核心，不是继续往老 `main.py` 补功
   - rag context
 - 再加一层 project context
 - 这样 assistant 才能真正绑定工作站里的“当前项目”
+
 - P4：最后再考虑多 Agent / 路由
 - 只有当你已经明确有多个职责不同的 agent 时，再做：
   
