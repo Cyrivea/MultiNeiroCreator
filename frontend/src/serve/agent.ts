@@ -1,15 +1,51 @@
 import request from '@/utils/request'
 import { API_BASE, TOKEN_KEY } from '@/constants'
 
+export interface AgentAttachmentItem {
+  name: string
+  kind?: string | null
+  badge?: string | null
+  meta?: string | null
+}
+
 export interface AgentHistoryItem {
   role: 'user' | 'assistant'
   content: string
+  attachments?: AgentAttachmentItem[]
 }
 
 export interface AgentChatPayload {
   message: string
   history: AgentHistoryItem[]
   project_id?: number | null
+  attachments?: AgentAttachmentItem[]
+}
+
+export interface AgentDocumentMutationResponse {
+  status: string
+  message: string
+  deleted_chunks?: number
+  chunks_count?: number
+}
+
+export async function uploadAgentDocument(file: File, projectId?: number | null) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const suffix = projectId != null ? `?project_id=${projectId}` : ''
+  return request.post<any, AgentDocumentMutationResponse>(`/upload${suffix}`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+}
+
+export async function deleteAgentDocument(filename: string, projectId?: number | null) {
+  return request.delete<any, AgentDocumentMutationResponse>('/documents', {
+    data: {
+      filename,
+      project_id: projectId,
+    },
+  })
 }
 
 export interface AgentToolEvent {

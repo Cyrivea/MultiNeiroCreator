@@ -36,5 +36,7 @@ def init_db() -> None:
     columns = {row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
     if "project_id" not in columns:
         conn.execute("ALTER TABLE messages ADD COLUMN project_id INTEGER")
+    if "attachments_json" not in columns:
+        conn.execute("ALTER TABLE messages ADD COLUMN attachments_json TEXT")
     conn.commit()
     conn.close()

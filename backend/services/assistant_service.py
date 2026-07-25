@@ -9,7 +9,7 @@ from fastapi import HTTPException, UploadFile
 from agents.neyria import build_system_prompt, client, tools_map, tools_schema
 from repositories.chat_repo import append_message, clear_history as repo_clear_history, list_history
 from repositories.user_repo import get_profile, update_profile
-from services.rag import add_document, delete_document, list_documents, reindex_document, replace_document, search
+from services.rag import add_document, delete_document, get_document_chunks, list_documents, reindex_document, replace_document, search
 
 
 TOOL_TRIGGER_KEYWORDS: dict[str, tuple[str, ...]] = {
@@ -29,6 +29,9 @@ TOOL_TRIGGER_KEYWORDS: dict[str, tuple[str, ...]] = {
         "搜索",
     ),
 }
+
+MAX_ATTACHMENT_CONTEXT_CHARS = 12000
+MAX_RETRIEVED_CONTEXT_CHARS = 6000
 
 
 def load_profile(user_id: int) -> str:
@@ -107,18 +110,103 @@ def extract_stream_content(chunk) -> str:
     return delta.content if hasattr(delta, "content") and delta.content else ""
 
 
+def normalize_attachments(attachments: list[dict] | None) -> list[dict]:
+    normalized: list[dict] = []
+    for attachment in attachments or []:
+        name = str(attachment.get("name", "")).strip()
+        if not name:
+            continue
+        normalized.append(
+            {
+                "name": name,
+                "kind": attachment.get("kind"),
+                "badge": attachment.get("badge"),
+                "meta": attachment.get("meta"),
+            }
+        )
+    return normalized
+
+
+def format_message_content_for_model(content: str, attachments: list[dict] | None = None) -> str:
+    normalized_attachments = normalize_attachments(attachments)
+    if not normalized_attachments:
+        return content
+
+    attachment_names = "、".join(item["name"] for item in normalized_attachments)
+    base_content = (content or "").strip() or "用户发送了附件，请结合附件内容处理本条请求。"
+    return f"{base_content}\n\n[该条消息附带文件：{attachment_names}]"
+
+
+def build_attachment_context(
+    user_id: int,
+    project_id: int | None = None,
+    attachments: list[dict] | None = None,
+) -> str:
+    normalized_attachments = normalize_attachments(attachments)
+    if not normalized_attachments:
+        return ""
+
+    sections: list[str] = []
+    consumed = 0
+    for attachment in normalized_attachments:
+        chunks = get_document_chunks(
+            filename=attachment["name"],
+            user_id=user_id,
+            project_id=project_id,
+        )
+        if not chunks:
+            continue
+
+        remaining = MAX_ATTACHMENT_CONTEXT_CHARS - consumed
+        if remaining <= 0:
+            break
+
+        content = "\n".join(chunk.strip() for chunk in chunks if chunk.strip()).strip()
+        if not content:
+            continue
+
+        snippet = content[:remaining]
+        sections.append(f"[附件 {attachment['name']}]\n{snippet}")
+        consumed += len(snippet)
+
+    return "\n\n".join(sections)
+
+
+def build_retrieved_context(
+    user_id: int,
+    message: str,
+    project_id: int | None = None,
+) -> str:
+    if not (message or "").strip():
+        return ""
+
+    docs = search(message, n_results=3, user_id=user_id, project_id=project_id)
+    if not docs:
+        return ""
+
+    joined = "\n".join(doc.strip() for doc in docs if doc.strip()).strip()
+    return joined[:MAX_RETRIEVED_CONTEXT_CHARS] if joined else ""
+
+
 async def stream_chat(
     user: dict,
     message: str,
     history: list[dict],
     project_id: int | None = None,
+    attachments: list[dict] | None = None,
 ) -> AsyncGenerator[str, None]:
     if client is None:
         raise HTTPException(status_code=503, detail="未配置 API_KEY，聊天功能暂不可用")
 
+    display_message = (message or "").strip() or "已发送附件"
+
     try:
-        docs = await asyncio.to_thread(search, message, n_results=3, user_id=user["id"], project_id=project_id)
-        context = "\n".join(docs) if docs else ""
+        attachment_context, retrieved_context = await asyncio.gather(
+            asyncio.to_thread(build_attachment_context, user["id"], project_id, attachments),
+            asyncio.to_thread(build_retrieved_context, user["id"], message, project_id),
+        )
+        context_sections = [item for item in [attachment_context, retrieved_context] if item]
+        context = "\n\n".join(context_sections)
     except Exception:
         context = ""
 
@@ -126,8 +214,35 @@ async def stream_chat(
     system_prompt = build_system_prompt(profile, context)
 
     messages = [{"role": "system", "content": system_prompt}]
-    messages += history
-    messages.append({"role": "user", "content": message})
+    clean_history: list[dict] = []
+    for item in history:
+        role = item.get("role")
+        content = str(item.get("content", "")).strip()
+        normalized_history_attachments = normalize_attachments(item.get("attachments"))
+        if role not in {"user", "assistant"} or not content:
+            continue
+        messages.append(
+            {
+                "role": role,
+                "content": format_message_content_for_model(content, normalized_history_attachments),
+            }
+        )
+        history_item = {"role": role, "content": content}
+        if normalized_history_attachments:
+            history_item["attachments"] = normalized_history_attachments
+        clean_history.append(history_item)
+
+    normalized_attachments = normalize_attachments(attachments)
+    messages.append(
+        {
+            "role": "user",
+            "content": format_message_content_for_model(message, normalized_attachments),
+        }
+    )
+    current_user_history_item = {"role": "user", "content": message}
+    if normalized_attachments:
+        current_user_history_item["attachments"] = normalized_attachments
+    clean_history.append(current_user_history_item)
 
     func_name = None
     reply = ""
@@ -178,13 +293,9 @@ async def stream_chat(
             yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
 
     messages.append({"role": "assistant", "content": reply})
-    clean_history = []
-    for item in messages:
-        if item.get("role") in ["user", "assistant"] and item.get("content"):
-            if item.get("role") == "assistant" and item.get("tool_calls"):
-                continue
-            clean_history.append({"role": item["role"], "content": item["content"]})
-
-    append_message(user["id"], "user", message, project_id)
+    if not (message or "").strip():
+        current_user_history_item["content"] = display_message
+    append_message(user["id"], "user", current_user_history_item["content"], project_id, normalized_attachments)
     append_message(user["id"], "assistant", reply, project_id)
+    clean_history.append({"role": "assistant", "content": reply})
     yield f"data: {json.dumps({'type': 'done', 'history': clean_history, 'tool_used': func_name}, ensure_ascii=False)}\n\n"

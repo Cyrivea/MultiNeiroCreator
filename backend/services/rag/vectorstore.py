@@ -22,16 +22,23 @@ class VectorStore:
         scope: str | None = None,
         source: str | None = None,
     ):
-        where: dict[str, int | str] = {}
+        clauses: list[dict] = []
         if user_id is not None:
-            where["user_id"] = user_id
+            clauses.append({"user_id": user_id})
         if project_id is not None:
-            where["project_id"] = project_id
+            clauses.append({"project_id": project_id})
         if scope:
-            where["scope"] = scope
+            clauses.append({"scope": scope})
         if source:
-            where["source"] = source
-        return where or None
+            clauses.append({"source": source})
+
+        if not clauses:
+            return None
+
+        if len(clauses) == 1:
+            return clauses[0]
+
+        return {"$and": clauses}
 
     def add_documents(
         self,

@@ -21,6 +21,8 @@ def add_document(
 ) -> int:
     text = read_file(file_path, filename)
     chunks = chunk_text(text, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    if not chunks:
+        raise ValueError("文档未切分出有效文本块，无法写入知识库")
     embeddings = get_embeddings_batch(chunks)
     return add_indexed_document(
         filename=filename,
@@ -127,4 +129,18 @@ def reindex_document(
         project_id=project_id,
         scope=scope,
         replace_existing=True,
+    )
+
+
+def get_document_chunks(
+    filename: str,
+    user_id: int | None = None,
+    project_id: int | None = None,
+    scope: str = "assistant",
+) -> list[str]:
+    return get_indexed_document_chunks(
+        filename=filename,
+        user_id=user_id,
+        project_id=project_id,
+        scope=scope,
     )

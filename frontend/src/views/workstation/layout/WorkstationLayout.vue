@@ -174,7 +174,11 @@
                 <div class="assistant-head-divider" aria-hidden="true"></div>
               </div>
 
-              <div ref="assistantBodyRef" class="assistant-body">
+              <div
+                ref="assistantBodyRef"
+                class="assistant-body"
+                :class="{ 'has-floating-composer': true, 'has-attachment-dock': hasUploadedAttachments }"
+              >
                 <div v-if="!agentMessages.length" class="agent-empty">
                   <div class="agent-empty-orbit" aria-hidden="true"></div>
                   <div class="agent-empty-title">Neyria 已就绪</div>
@@ -209,6 +213,29 @@
                       </template>
                       <template v-else>{{ message.content }}</template>
                     </div>
+                    <div v-if="message.attachments?.length" class="agent-message-attachments">
+                      <article
+                        v-for="attachment in message.attachments"
+                        :key="`${message.id}-${attachment.id}`"
+                        class="message-attachment-chip"
+                        :class="[`is-${attachment.kind}`]"
+                      >
+                        <template v-if="attachment.kind === 'image' && attachment.previewUrl">
+                          <img
+                            class="message-attachment-image"
+                            :src="attachment.previewUrl"
+                            :alt="attachment.name"
+                          />
+                        </template>
+                        <template v-else>
+                          <div class="message-attachment-icon" aria-hidden="true">{{ attachment.badge }}</div>
+                        </template>
+                        <div class="message-attachment-copy">
+                          <div class="message-attachment-name">{{ attachment.name }}</div>
+                          <div class="message-attachment-meta">{{ attachment.meta }}</div>
+                        </div>
+                      </article>
+                    </div>
                   </div>
                 </TransitionGroup>
 
@@ -218,8 +245,74 @@
                 </div>
               </div>
 
-              <div class="composer-wrap">
-                <div class="input-composer">
+              <div
+                class="assistant-composer-underlay"
+                :class="{ 'has-attachment-dock': hasUploadedAttachments }"
+                aria-hidden="true"
+              ></div>
+
+              <div class="composer-wrap" :class="{ 'has-attachment-dock': hasUploadedAttachments }">
+                <div class="input-composer" :class="{ 'has-attachment-dock': hasUploadedAttachments }">
+                  <Transition name="attachment-dock-float">
+                    <div v-if="hasUploadedAttachments" class="attachment-dock" aria-label="待发送附件">
+                      <div class="attachment-dock-scroll">
+                        <article
+                          v-for="attachment in uploadedAttachments"
+                          :key="attachment.id"
+                          class="attachment-chip"
+                          :class="[`is-${attachment.kind}`]"
+                        >
+                          <button
+                            class="attachment-chip-remove"
+                            type="button"
+                            title="移除待发送附件"
+                            @click.stop="removeUploadedAttachment(attachment.id)"
+                          >
+                            ×
+                          </button>
+
+                          <template v-if="attachment.kind === 'image' && attachment.previewUrl">
+                            <img
+                              class="attachment-chip-image"
+                              :src="attachment.previewUrl"
+                              :alt="attachment.name"
+                            />
+                            <div class="attachment-chip-image-caption">{{ attachment.name }}</div>
+                          </template>
+
+                          <template v-else>
+                            <div class="attachment-chip-icon" aria-hidden="true">
+                              <span>{{ attachment.badge }}</span>
+                            </div>
+                            <div class="attachment-chip-copy">
+                              <div class="attachment-chip-name">{{ attachment.name }}</div>
+                              <div class="attachment-chip-meta">{{ attachment.meta }}</div>
+                            </div>
+                          </template>
+                        </article>
+
+                        <button
+                          class="attachment-add-card"
+                          type="button"
+                          :disabled="isUploadingAttachment || isAgentSending"
+                          @click="openAttachmentPicker"
+                        >
+                          <span class="attachment-add-icon" aria-hidden="true">+</span>
+                          <span class="attachment-add-copy">
+                            {{ isUploadingAttachment ? '发送中...' : '继续添加' }}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </Transition>
+
+                  <input
+                    ref="attachmentInputRef"
+                    class="composer-attachment-input"
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.json,.csv,image/png,image/jpeg,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                    @change="handleAttachmentPicked"
+                  />
                   <textarea
                     v-model="agentInput"
                     placeholder="我来帮你实现想法！"
@@ -228,7 +321,14 @@
                   ></textarea>
                   <div class="input-composer-toolbar">
                     <div class="composer-toolbar-left">
-                      <button class="composer-tool" title="附件功能暂未开放" aria-label="附件" type="button">
+                      <button
+                        class="composer-tool"
+                        title="选择待发送附件"
+                        aria-label="附件"
+                        type="button"
+                        :disabled="isUploadingAttachment || isAgentSending"
+                        @click="openAttachmentPicker"
+                      >
                         <svg
                           viewBox="0 0 24 24"
                           fill="none"
@@ -243,15 +343,38 @@
                       </button>
                     </div>
                     <div class="composer-toolbar-right">
-                      <button class="composer-tool" title="语音功能暂未开放" type="button">◉</button>
-                      <button class="composer-model-button" title="当前模型占位" type="button">
-                        Auto ▾
-                      </button>
+                      <div ref="modelMenuRef" class="composer-model-wrap">
+                        <button
+                          class="composer-model-button"
+                          :aria-expanded="isModelMenuOpen"
+                          title="选择对话模型"
+                          type="button"
+                          @click.stop="toggleModelMenu"
+                        >
+                          {{ selectedModelLabel }} ▾
+                        </button>
+                        <Transition name="panel-float">
+                          <div v-if="isModelMenuOpen" class="composer-model-menu">
+                            <button
+                              v-for="option in modelOptions"
+                              :key="option.value"
+                              class="composer-model-option"
+                              :class="{ active: selectedModel === option.value, disabled: option.disabled }"
+                              type="button"
+                              :disabled="option.disabled"
+                              @click="selectModel(option)"
+                            >
+                              <span class="composer-model-option-name">{{ option.label }}</span>
+                              <span class="composer-model-option-meta">{{ option.meta }}</span>
+                            </button>
+                          </div>
+                        </Transition>
+                      </div>
                       <button
                         class="composer-action primary"
                         title="Send"
                         type="button"
-                        :disabled="isAgentSending || !agentInput.trim()"
+                        :disabled="isAgentSending || isUploadingAttachment || (!agentInput.trim() && !hasUploadedAttachments)"
                         @click="sendAgentMessage"
                       >
                         <span class="composer-action-icon">{{ isAgentSending ? '...' : '↑' }}</span>
@@ -421,7 +544,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getAgentHistory, streamAgentChat, type AgentHistoryItem } from '@/serve/agent'
+import {
+  type AgentAttachmentItem,
+  getAgentHistory,
+  streamAgentChat,
+  uploadAgentDocument,
+  type AgentHistoryItem,
+} from '@/serve/agent'
 import { createAutoBackup, createProject, ensureAutoSaveProject, getRecentProjects, type ProjectPayload } from '@/serve/project'
 import { useLoadingStore } from '@/stores/loading'
 
@@ -452,6 +581,7 @@ interface AgentMessage {
   toolName?: string | null
   isError?: boolean
   isPending?: boolean
+  attachments?: UploadedAttachment[]
 }
 
 interface RecentProjectItem {
@@ -466,7 +596,6 @@ interface ProjectFileContent {
   id?: number
   name: string
   save_mode?: string
-  created_at?: string
   created_at?: string
   updated_at?: string
   version?: string
@@ -497,6 +626,28 @@ interface SaveModeOption {
   intervalMs: number
 }
 
+interface ModelOption {
+  value: string
+  label: string
+  meta: string
+  disabled?: boolean
+}
+
+type AttachmentKind = 'image' | 'pdf' | 'word' | 'excel' | 'ppt' | 'text' | 'file'
+
+interface UploadedAttachment {
+  id: string
+  name: string
+  extension: string
+  kind: AttachmentKind
+  file: File | null
+  previewUrl: string | null
+  mimeType: string
+  size: number
+  badge: string
+  meta: string
+}
+
 const isToolModalOpen = ref(false)
 const isProjectOpen = ref(false)
 const isSearchOpen = ref(false)
@@ -516,10 +667,16 @@ const currentSaveMode = ref<AutoSaveMode>('manual')
 const projectWarningTitle = ref('')
 const projectWarningMessage = ref('')
 const assistantBodyRef = ref<HTMLElement | null>(null)
+const attachmentInputRef = ref<HTMLInputElement | null>(null)
+const modelMenuRef = ref<HTMLElement | null>(null)
 const agentInput = ref('')
 const agentMessages = ref<AgentMessage[]>([])
+const uploadedAttachments = ref<UploadedAttachment[]>([])
 const isAgentSending = ref(false)
+const isUploadingAttachment = ref(false)
 const activeToolName = ref('')
+const isModelMenuOpen = ref(false)
+const selectedModel = ref('glm-4-flash')
 const isAgentThinking = ref(false)
 const hasAgentStartedReplying = ref(false)
 const agentThinkingSeconds = ref(0)
@@ -560,6 +717,12 @@ const toolModalOptions: ToolModalOption[] = [
   },
 ]
 
+const modelOptions: ModelOption[] = [
+  { value: 'glm-4-flash', label: 'GLM-4-Flash', meta: '当前已接入 · 智谱' },
+  { value: 'gpt-4.1', label: 'GPT-4.1', meta: '未接入后端', disabled: true },
+  { value: 'claude-3-7-sonnet', label: 'Claude Sonnet', meta: '未接入后端', disabled: true },
+]
+
 const searchIndex: SearchItem[] = [
   { title: '选择项目', meta: '顶部栏 · 项目切换' },
   { title: '搜索', meta: '顶部栏 · 全局检索入口' },
@@ -571,7 +734,6 @@ const searchIndex: SearchItem[] = [
   { title: '创作区', meta: '中间区域 · 工作区' },
   { title: 'Neyria', meta: '右侧栏 · AI 助手面板' },
   { title: '上传文件', meta: '右下输入区 · 功能按钮' },
-  { title: '语音对话', meta: '右下输入区 · 功能按钮' },
   { title: '切换模型', meta: '右下输入区 · Auto 按钮' },
 ]
 
@@ -609,6 +771,12 @@ const currentProjectTabLabel = computed(() => {
   return currentProjectName.value?.trim() || '选择项目'
 })
 
+const hasUploadedAttachments = computed(() => uploadedAttachments.value.length > 0)
+
+const selectedModelLabel = computed(() => {
+  return modelOptions.find(option => option.value === selectedModel.value)?.label || 'GLM-4-Flash'
+})
+
 function openToolModal() {
   isToolModalOpen.value = true
 }
@@ -617,16 +785,207 @@ function closeToolModal() {
   isToolModalOpen.value = false
 }
 
+function openAttachmentPicker() {
+  if (isUploadingAttachment.value) return
+  attachmentInputRef.value?.click()
+}
+
+function getAttachmentExtension(filename: string) {
+  const segments = filename.split('.')
+  return segments.length > 1 ? segments.pop()?.toLowerCase() || '' : ''
+}
+
+function resolveAttachmentKind(file: Pick<File, 'name' | 'type'>): AttachmentKind {
+  const extension = getAttachmentExtension(file.name)
+  const mimeType = file.type.toLowerCase()
+
+  if (
+    mimeType.startsWith('image/') ||
+    ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension)
+  ) {
+    return 'image'
+  }
+
+  if (mimeType === 'application/pdf' || extension === 'pdf') {
+    return 'pdf'
+  }
+
+  if (
+    mimeType.includes('word') ||
+    mimeType.includes('officedocument.wordprocessingml') ||
+    ['doc', 'docx'].includes(extension)
+  ) {
+    return 'word'
+  }
+
+  if (
+    mimeType.includes('excel') ||
+    mimeType.includes('spreadsheetml') ||
+    ['xls', 'xlsx', 'csv'].includes(extension)
+  ) {
+    return 'excel'
+  }
+
+  if (
+    mimeType.includes('powerpoint') ||
+    mimeType.includes('presentationml') ||
+    ['ppt', 'pptx'].includes(extension)
+  ) {
+    return 'ppt'
+  }
+
+  if (['txt', 'md', 'json'].includes(extension)) {
+    return 'text'
+  }
+
+  return 'file'
+}
+
+function getAttachmentBadge(kind: AttachmentKind, extension: string) {
+  if (kind === 'pdf') return 'PDF'
+  if (kind === 'word') return extension === 'doc' ? 'DOC' : 'DOCX'
+  if (kind === 'excel') return extension === 'xls' ? 'XLS' : extension === 'csv' ? 'CSV' : 'XLSX'
+  if (kind === 'ppt') return extension === 'ppt' ? 'PPT' : 'PPTX'
+  if (kind === 'text') return extension ? extension.toUpperCase() : 'TXT'
+  return extension ? extension.toUpperCase() : 'FILE'
+}
+
+function getAttachmentMeta(kind: AttachmentKind) {
+  const labelMap: Record<AttachmentKind, string> = {
+    image: '图片附件',
+    pdf: 'PDF 文档',
+    word: 'Word 文档',
+    excel: 'Excel 表格',
+    ppt: 'PPT 演示稿',
+    text: '文本资料',
+    file: '文件资料',
+  }
+
+  return labelMap[kind]
+}
+
+function revokeAttachmentPreview(attachment: UploadedAttachment) {
+  if (attachment.previewUrl?.startsWith('blob:')) {
+    URL.revokeObjectURL(attachment.previewUrl)
+  }
+}
+
+function buildUploadedAttachment(file: File): UploadedAttachment {
+  const extension = getAttachmentExtension(file.name)
+  const kind = resolveAttachmentKind(file)
+
+  return {
+    id: `attachment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: file.name,
+    extension,
+    kind,
+    file,
+    previewUrl: kind === 'image' ? URL.createObjectURL(file) : null,
+    mimeType: file.type,
+    size: file.size,
+    badge: getAttachmentBadge(kind, extension),
+    meta: getAttachmentMeta(kind),
+  }
+}
+
+function clearUploadedAttachments() {
+  uploadedAttachments.value.forEach(revokeAttachmentPreview)
+  uploadedAttachments.value = []
+}
+
+function upsertUploadedAttachment(file: File) {
+  const nextAttachment = buildUploadedAttachment(file)
+  const existingIndex = uploadedAttachments.value.findIndex(item => item.name === nextAttachment.name)
+
+  if (existingIndex >= 0) {
+    revokeAttachmentPreview(uploadedAttachments.value[existingIndex])
+    uploadedAttachments.value.splice(existingIndex, 1, nextAttachment)
+    return
+  }
+
+  uploadedAttachments.value = [nextAttachment, ...uploadedAttachments.value]
+}
+
+function cloneAttachmentForMessage(attachment: UploadedAttachment): UploadedAttachment {
+  return {
+    ...attachment,
+    file: null,
+    previewUrl:
+      attachment.kind === 'image' && attachment.file
+        ? URL.createObjectURL(attachment.file)
+        : attachment.previewUrl,
+  }
+}
+
+function removeAttachmentLocally(attachmentId: string) {
+  const nextAttachments: UploadedAttachment[] = []
+  for (const attachment of uploadedAttachments.value) {
+    if (attachment.id === attachmentId) {
+      revokeAttachmentPreview(attachment)
+      continue
+    }
+    nextAttachments.push(attachment)
+  }
+  uploadedAttachments.value = nextAttachments
+}
+
+async function handleAttachmentPicked(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  const file = input?.files?.[0]
+  if (!file) return
+
+  if (currentProjectId.value == null) {
+    ElMessage.warning('请先新建或打开一个工程，再把资料挂到当前工程里')
+    if (input) {
+      input.value = ''
+    }
+    return
+  }
+
+  try {
+    upsertUploadedAttachment(file)
+    ElMessage.success(`已添加待发送附件：${file.name}`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '添加附件失败'
+    ElMessage.error(message)
+  } finally {
+    if (input) {
+      input.value = ''
+    }
+  }
+}
+
+function removeUploadedAttachment(attachmentId: string) {
+  removeAttachmentLocally(attachmentId)
+}
+
+function toggleModelMenu() {
+  isModelMenuOpen.value = !isModelMenuOpen.value
+}
+
+function selectModel(option: ModelOption) {
+  if (option.disabled) {
+    ElMessage.info(`${option.label} 目前未接入后端，当前只能使用智谱模型`)
+    return
+  }
+
+  selectedModel.value = option.value
+  isModelMenuOpen.value = false
+  ElMessage.success(`已切换为 ${option.label}`)
+}
+
 function resetWorkspaceTransientState() {
   isProjectOpen.value = false
   isSearchOpen.value = false
   isSaveModeOpen.value = false
+  isModelMenuOpen.value = false
   searchQuery.value = ''
   agentInput.value = ''
   activeToolName.value = ''
   chatAbortController?.abort('PROJECT_SWITCH')
   chatAbortController = null
   stopAgentThinking()
+  clearUploadedAttachments()
   isAgentSending.value = false
   agentMessages.value = []
 }
@@ -640,6 +999,7 @@ function initializeEmptyAgentPanel() {
   hasAgentStartedReplying.value = false
   activeToolName.value = ''
   agentInput.value = ''
+  clearUploadedAttachments()
   agentMessages.value = []
 }
 
@@ -1198,7 +1558,31 @@ function buildAgentHistory(): AgentHistoryItem[] {
     .map(item => ({
       role: item.role,
       content: item.content,
+      attachments: item.attachments?.map(attachment => ({
+        name: attachment.name,
+        kind: attachment.kind,
+        badge: attachment.badge,
+        meta: attachment.meta,
+      })),
     }))
+}
+
+function hydrateAttachmentFromPayload(payload: AgentAttachmentItem): UploadedAttachment {
+  const extension = getAttachmentExtension(payload.name)
+  const kind = (payload.kind as AttachmentKind | undefined) || resolveAttachmentKind({ name: payload.name, type: '' })
+
+  return {
+    id: `attachment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: payload.name,
+    extension,
+    kind,
+    file: null,
+    previewUrl: null,
+    mimeType: '',
+    size: 0,
+    badge: payload.badge || getAttachmentBadge(kind, extension),
+    meta: payload.meta || getAttachmentMeta(kind),
+  }
 }
 
 function mapHistoryToAgentMessages(history: AgentHistoryItem[]) {
@@ -1206,6 +1590,7 @@ function mapHistoryToAgentMessages(history: AgentHistoryItem[]) {
     id: `agent-${localAgentMessageId++}`,
     role: item.role,
     content: item.content,
+    attachments: item.attachments?.map(hydrateAttachmentFromPayload),
   }))
 }
 
@@ -1315,13 +1700,46 @@ function handleComposerKeydown(event: KeyboardEvent) {
 
 async function sendAgentMessage() {
   const message = agentInput.value.trim()
-  if (!message || isAgentSending.value) return
+  const pendingAttachments = [...uploadedAttachments.value]
+  if ((!message && !pendingAttachments.length) || isAgentSending.value || isUploadingAttachment.value) return
+
+  const attachmentPayloads: AgentAttachmentItem[] = []
+  if (pendingAttachments.length) {
+    if (currentProjectId.value == null) {
+      ElMessage.warning('请先进入一个工程，再发送带附件的消息')
+      return
+    }
+
+    isUploadingAttachment.value = true
+    try {
+      for (const attachment of pendingAttachments) {
+        if (!attachment.file) continue
+        const result = await uploadAgentDocument(attachment.file, currentProjectId.value)
+        if (result.status !== 'success') {
+          throw new Error(result.message || `附件上传失败：${attachment.name}`)
+        }
+        attachmentPayloads.push({
+          name: attachment.name,
+          kind: attachment.kind,
+          badge: attachment.badge,
+          meta: attachment.meta,
+        })
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '附件发送失败'
+      ElMessage.error(errorMessage)
+      isUploadingAttachment.value = false
+      return
+    }
+    isUploadingAttachment.value = false
+  }
 
   const history = buildAgentHistory()
   const userMessage: AgentMessage = {
     id: `agent-${localAgentMessageId++}`,
     role: 'user',
-    content: message,
+    content: message || '已发送附件',
+    attachments: pendingAttachments.map(cloneAttachmentForMessage),
   }
   const assistantMessage: AgentMessage = {
     id: `agent-${localAgentMessageId++}`,
@@ -1333,6 +1751,7 @@ async function sendAgentMessage() {
 
   agentMessages.value = [...agentMessages.value, userMessage, assistantMessage]
   agentInput.value = ''
+  clearUploadedAttachments()
   isAgentSending.value = true
   activeToolName.value = ''
   startAgentThinking()
@@ -1350,6 +1769,7 @@ async function sendAgentMessage() {
         message,
         history,
         project_id: currentProjectId.value,
+        attachments: attachmentPayloads,
       },
       {
         onTool(event) {
@@ -1403,6 +1823,7 @@ async function sendAgentMessage() {
     await scrollAssistantToBottom()
   } finally {
     isAgentSending.value = false
+    isUploadingAttachment.value = false
     activeToolName.value = ''
     stopAgentThinking()
     chatAbortController = null
@@ -1419,6 +1840,10 @@ function handleDocumentClick(event: MouseEvent) {
 
   if (saveModeWrapRef.value && target && !saveModeWrapRef.value.contains(target)) {
     isSaveModeOpen.value = false
+  }
+
+  if (modelMenuRef.value && target && !modelMenuRef.value.contains(target)) {
+    isModelMenuOpen.value = false
   }
 }
 
@@ -1437,6 +1862,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   chatAbortController?.abort()
   stopAgentThinking()
+  clearUploadedAttachments()
   clearAutoSaveTimer()
   document.removeEventListener('click', handleDocumentClick)
 })
@@ -1913,16 +2339,19 @@ onBeforeUnmount(() => {
 
 .main-grid {
   min-height: 0;
+  height: 100%;
   display: grid;
   min-width: var(--app-min-width);
   grid-template-columns: var(--left-column-w) minmax(716px, 1fr) var(--right-column-w);
   grid-template-areas: 'left center right';
   background: var(--body-bg);
+  overflow: hidden;
 }
 
 .left-column {
   grid-area: left;
   min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-columns: 42px 1fr;
   border-right: 1px solid var(--line) !important;
@@ -2010,6 +2439,7 @@ onBeforeUnmount(() => {
 .center-column {
   grid-area: center;
   min-width: 0;
+  min-height: 0;
   position: relative;
   background: var(--body-bg);
 }
@@ -2055,18 +2485,23 @@ onBeforeUnmount(() => {
 .right-column {
   grid-area: right;
   min-width: 0;
+  min-height: 0;
   padding: 0;
   border-left: 1px solid var(--line) !important;
   background:
     radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 34%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
     var(--column-bg);
+  position: relative;
+  overflow: hidden;
 }
 
 .assistant-panel {
   height: 100%;
+  min-height: 0;
+  position: relative;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.014), rgba(255, 255, 255, 0)),
     var(--column-bg);
@@ -2129,13 +2564,48 @@ onBeforeUnmount(() => {
 
 .assistant-body {
   min-height: 0;
-  overflow: auto;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 14px 14px 10px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   background: var(--column-bg);
   scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  position: relative;
+  z-index: 1;
+}
+
+.assistant-body.has-floating-composer {
+  padding-bottom: 234px;
+}
+
+.assistant-body.has-floating-composer.has-attachment-dock {
+  padding-bottom: 332px;
+}
+
+.assistant-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.assistant-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.assistant-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.assistant-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
 }
 
 .agent-empty {
@@ -2193,7 +2663,10 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding-bottom: 4px;
+  padding-bottom: 12px;
+  min-height: min-content;
+  position: relative;
+  z-index: 1;
 }
 
 .agent-message {
@@ -2285,6 +2758,88 @@ onBeforeUnmount(() => {
   color: #f0d8d8;
 }
 
+.agent-message-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(92%, 100%);
+}
+
+.message-attachment-chip {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.018)),
+    rgba(255, 255, 255, 0.02);
+}
+
+.agent-message.is-user .message-attachment-chip {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.028)),
+    rgba(255, 255, 255, 0.026);
+}
+
+.message-attachment-chip.is-image {
+  align-items: stretch;
+}
+
+.message-attachment-image,
+.message-attachment-icon {
+  flex: 0 0 auto;
+}
+
+.message-attachment-image {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  object-fit: cover;
+  filter: grayscale(1);
+}
+
+.message-attachment-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(255, 255, 255, 0.03);
+}
+
+.message-attachment-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.message-attachment-name {
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-attachment-meta {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .agent-tool-chip,
 .agent-status-line {
   color: var(--text-secondary);
@@ -2320,6 +2875,7 @@ onBeforeUnmount(() => {
   color: rgba(255, 255, 255, 0.68);
   background: linear-gradient(180deg, transparent, rgba(11, 11, 11, 0.92) 32%, rgba(11, 11, 11, 0.98));
   pointer-events: none;
+  z-index: 1;
 }
 
 .agent-status-pulse {
@@ -2330,28 +2886,77 @@ onBeforeUnmount(() => {
   animation: agent-status-pulse 1.6s ease-in-out infinite;
 }
 
+.assistant-composer-underlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 248px;
+  background: var(--column-bg);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.assistant-composer-underlay.has-attachment-dock {
+  height: 346px;
+}
+
+.assistant-composer-underlay::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -44px;
+  height: 44px;
+  background: linear-gradient(180deg, rgba(4, 4, 5, 0), var(--column-bg) 82%, var(--column-bg) 100%);
+}
+
 .composer-wrap {
-  padding: 8px 10px 10px;
-  border-top: 1px solid var(--line) !important;
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  padding: 18px 18px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 28px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.012), transparent),
-    var(--column-bg);
+    linear-gradient(180deg, #171717, #111111 72%, #0b0b0c 100%);
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow: visible;
+  transition:
+    padding-top 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow:
+    0 -18px 48px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.composer-wrap::before {
+  display: none;
+}
+
+.composer-wrap.has-attachment-dock {
+  padding-top: 106px;
 }
 
 .input-composer {
-  border: 1px solid rgba(255, 255, 255, 0.06) !important;
-  border-radius: 20px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.015)),
-    rgba(255, 255, 255, 0.012);
-  padding: 16px 12px 12px 16px;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 4px 2px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   position: relative;
+  overflow: visible;
+  pointer-events: auto;
+  z-index: 1;
   transition:
     border-color 180ms ease,
     background 180ms ease,
@@ -2359,16 +2964,205 @@ onBeforeUnmount(() => {
     transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.attachment-dock {
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  transform: translateY(calc(-100% - 10px));
+  z-index: 3;
+  pointer-events: none;
+}
+
+.attachment-dock-scroll {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+  pointer-events: auto;
+}
+
+.attachment-dock-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.attachment-chip,
+.attachment-add-card {
+  flex: 0 0 auto;
+  min-height: 74px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.014)),
+    #111112;
+}
+
+.attachment-chip {
+  min-width: 146px;
+  max-width: 178px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.attachment-chip.is-image {
+  min-width: 92px;
+  max-width: 92px;
+  padding: 0;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.attachment-chip.is-removing {
+  opacity: 0.58;
+}
+
+.attachment-chip-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  color: rgba(255, 255, 255, 0.72) !important;
+  background: rgba(0, 0, 0, 0.45) !important;
+}
+
+.attachment-chip-remove:disabled {
+  cursor: default;
+  opacity: 0.56;
+}
+
+.attachment-chip-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(1);
+}
+
+.attachment-chip-image-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 22px 8px 8px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 10px;
+  line-height: 1.35;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.92));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-chip-icon {
+  width: 42px;
+  height: 52px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(255, 255, 255, 0.03);
+  position: relative;
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 9px;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.attachment-chip-icon::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 14px;
+  height: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+}
+
+.attachment-chip-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.attachment-chip-name,
+.attachment-chip-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-chip-name {
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}
+
+.attachment-chip-meta {
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.attachment-add-card {
+  min-width: 92px;
+  padding: 10px 12px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.attachment-add-icon {
+  font-size: 22px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.attachment-add-copy {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.composer-attachment-input {
+  display: none;
+}
+
 .input-composer:hover,
 .input-composer:focus-within {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.022)),
-    rgba(255, 255, 255, 0.018);
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  box-shadow:
-    0 16px 40px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  transform: translateY(-1px);
+  background: transparent;
+  border-color: transparent !important;
+  box-shadow: none;
+  transform: none;
 }
 
 .input-composer textarea {
@@ -2402,6 +3196,10 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.composer-toolbar-left,
+.composer-toolbar-right {
   flex-wrap: wrap;
 }
 
@@ -2453,9 +3251,18 @@ onBeforeUnmount(() => {
   border: 1px solid transparent !important;
 }
 
+.composer-tool:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .composer-tool svg {
   width: 16px;
   height: 16px;
+}
+
+.composer-model-wrap {
+  position: relative;
 }
 
 .composer-model-button {
@@ -2482,6 +3289,57 @@ onBeforeUnmount(() => {
   filter: none !important;
 }
 
+.composer-model-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  min-width: 220px;
+  padding: 8px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015)),
+    rgba(11, 11, 11, 0.96);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  z-index: 6;
+}
+
+.composer-model-option {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  color: var(--text-primary);
+  background: transparent;
+  transition: background 160ms ease, transform 160ms ease, opacity 160ms ease;
+}
+
+.composer-model-option:hover:not(.disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
+}
+
+.composer-model-option.active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.composer-model-option.disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.composer-model-option-name {
+  font-size: 13px;
+}
+
+.composer-model-option-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 @media (max-width: 1480px) {
   .assistant-head-top {
     padding-inline: 12px;
@@ -2492,7 +3350,30 @@ onBeforeUnmount(() => {
   }
 
   .composer-wrap {
-    padding-inline: 8px;
+    left: 6px;
+    right: 6px;
+    bottom: 6px;
+    padding: 16px 16px 12px;
+  }
+
+  .assistant-body.has-floating-composer {
+    padding-bottom: 224px;
+  }
+
+  .assistant-body.has-floating-composer.has-attachment-dock {
+    padding-bottom: 320px;
+  }
+
+  .assistant-composer-underlay {
+    height: 238px;
+  }
+
+  .assistant-composer-underlay.has-attachment-dock {
+    height: 336px;
+  }
+
+  .composer-wrap.has-attachment-dock {
+    padding-top: 102px;
   }
 
   .agent-message-bubble {
@@ -2518,6 +3399,22 @@ onBeforeUnmount(() => {
   .input-composer textarea {
     min-height: 104px;
     font-size: 15px;
+  }
+
+  .attachment-dock {
+    left: 12px;
+    right: 12px;
+  }
+
+  .attachment-chip {
+    min-width: 132px;
+    max-width: 160px;
+  }
+
+  .attachment-chip.is-image,
+  .attachment-add-card {
+    min-width: 84px;
+    max-width: 84px;
   }
 
   .composer-model-button {
@@ -2602,6 +3499,28 @@ onBeforeUnmount(() => {
 .agent-message-float-leave-from {
   opacity: 1;
   transform: translateY(0) scale(1);
+  filter: blur(0);
+}
+
+.attachment-dock-float-enter-active,
+.attachment-dock-float-leave-active {
+  transition:
+    opacity 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.attachment-dock-float-enter-from,
+.attachment-dock-float-leave-to {
+  opacity: 0;
+  transform: translateY(calc(-100% - 2px)) scale(0.985);
+  filter: blur(6px);
+}
+
+.attachment-dock-float-enter-to,
+.attachment-dock-float-leave-from {
+  opacity: 1;
+  transform: translateY(calc(-100% - 10px)) scale(1);
   filter: blur(0);
 }
 

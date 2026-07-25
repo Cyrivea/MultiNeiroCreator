@@ -23,7 +23,7 @@ router = APIRouter(tags=["assistant"])
 async def chat(req: ChatRequest, user=Depends(verify_token)):
     history = [item.model_dump() for item in req.history]
     return StreamingResponse(
-        stream_chat(user, req.message, history, req.project_id),
+        stream_chat(user, req.message, history, req.project_id, [item.model_dump() for item in req.attachments]),
         media_type="text/event-stream",
     )
 
@@ -50,23 +50,28 @@ async def clear_history_route(project_id: int | None = None, user=Depends(verify
 
 
 @router.post("/upload")
-async def upload_file(file: UploadFile = File(...), user=Depends(verify_token)):
-    return await upload_document(file, user["id"])
+async def upload_file(
+    file: UploadFile = File(...),
+    project_id: int | None = Query(None),
+    user=Depends(verify_token),
+):
+    return await upload_document(file, user["id"], project_id)
 
 
 @router.get("/documents")
-async def list_rag_documents_route(user=Depends(verify_token)):
-    return get_rag_documents(user["id"])
+async def list_rag_documents_route(project_id: int | None = None, user=Depends(verify_token)):
+    return get_rag_documents(user["id"], project_id)
 
 
 @router.delete("/documents")
 async def delete_rag_document_route(req: RagDocumentDeleteRequest, user=Depends(verify_token)):
-    return remove_rag_document(req.filename, user["id"])
+    return remove_rag_document(req.filename, user["id"], req.project_id)
 
 
 @router.post("/documents/reindex")
 async def reindex_rag_document_route(
     filename: str = Query(..., min_length=1, max_length=255),
+    project_id: int | None = Query(None),
     user=Depends(verify_token),
 ):
-    return rebuild_rag_document(filename, user["id"])
+    return rebuild_rag_document(filename, user["id"], project_id)
