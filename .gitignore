@@ -3,7 +3,6 @@
 *.env
 secret_key.txt
 user_profile.json
-修改后更新服务器操作.md
 nginx_reviagent.conf
 cert/
 start.sh
@@ -24,6 +23,7 @@ backend_architecture_plan.md
 git_push.md
 PROJECT_ASSESSMENT.md
 RUNBOOK.md
+PROJECT_ACTION_TODO.md
 
 # ===== 备份与临时文件 =====
 *.bak
@@ -35,6 +35,7 @@ node_modules/
 dist/
 workspace/
 .trae/
+.claude/
 frontend/MultiNeiroCreator/
 garden-skills/
 
