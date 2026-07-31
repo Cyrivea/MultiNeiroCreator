@@ -6,6 +6,7 @@ user_profile.json
 修改后更新服务器操作.md
 nginx_reviagent.conf
 cert/
+.start.sh
 
 # ===== Python 虚拟环境与缓存 =====
 venv/
