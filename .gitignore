@@ -20,6 +20,10 @@ data/
 *.db
 *.log
 .vscode/
+backend_architecture_plan.md
+git_push.md
+PROJECT_ASSESSMENT.md
+RUNBOOK.md
 
 # ===== 备份与临时文件 =====
 *.bak
