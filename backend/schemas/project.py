@@ -5,9 +5,5 @@ from pydantic import BaseModel, Field
 
 class CreateProjectRequest(BaseModel):
     name: Optional[str] = Field(default=None, max_length=120)
-
-
-class AutoSaveProjectRequest(BaseModel):
-    name: Optional[str] = Field(default=None, max_length=120)
-    project_path: Optional[str] = Field(default=None, max_length=500)
-    save_mode: str = Field(..., max_length=40)
+    # 本地文件夹名，仅作展示标签使用，后端不会用它做任何文件操作
+    project_path: Optional[str] = Field(default=None, max_length=200)

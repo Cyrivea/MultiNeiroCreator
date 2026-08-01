@@ -551,7 +551,7 @@ import {
   uploadAgentDocument,
   type AgentHistoryItem,
 } from '@/serve/agent'
-import { createAutoBackup, createProject, ensureAutoSaveProject, getRecentProjects, type ProjectPayload } from '@/serve/project'
+import { createProject, getRecentProjects, type ProjectPayload } from '@/serve/project'
 import { useLoadingStore } from '@/stores/loading'
 
 // 真实进度接管：让工作站初始化阶段能推动 loadingStore.setProgress()，
@@ -1147,7 +1147,7 @@ async function discardCurrentProjectAndCreate() {
   try {
     await createNamedProject()
   } catch (error) {
-    if (error instanceof Error) {
+    if (error instanceof Error && error.message !== 'USER_CANCELLED_DIRECTORY_PICKER') {
       ElMessage.error(error.message || '创建项目失败')
     }
   } finally {
@@ -1155,23 +1155,74 @@ async function discardCurrentProjectAndCreate() {
   }
 }
 
+function requestProjectDirectoryHandle(): Promise<BrowserDirectoryHandle> {
+  const directoryPicker = (window as Window & {
+    showDirectoryPicker?: () => Promise<BrowserDirectoryHandle>
+  }).showDirectoryPicker
+
+  if (!directoryPicker) {
+    throw new Error('当前浏览器不支持选择文件夹，请使用 Chromium 内核浏览器')
+  }
+
+  return directoryPicker().catch(() => {
+    throw new Error('USER_CANCELLED_DIRECTORY_PICKER')
+  })
+}
+
 async function createNamedProject() {
-  const { project } = await createProject(newProjectName.value.trim())
+  const projectName = newProjectName.value.trim()
+  const directoryHandle = await requestProjectDirectoryHandle()
+
+  for (const directoryName of ['assets', 'audio', 'image', 'video', 'exports']) {
+    await directoryHandle.getDirectoryHandle(directoryName, { create: true })
+  }
+
+  const now = getCurrentTimestampParts()
+  const projectMeta: ProjectFileContent = {
+    name: projectName,
+    created_at: now.display,
+    updated_at: now.display,
+    save_mode: 'manual',
+    version: '0.1.0',
+  }
+  await writeLocalJsonFile(directoryHandle, 'project.json', projectMeta)
+
+  // 服务器只登记元数据（项目名 + 文件夹名标签），用于最近项目列表和聊天记录按项目隔离
+  let registered: ProjectPayload | null = null
+  try {
+    registered = (await createProject(projectName, directoryHandle.name)).project
+  } catch {
+    ElMessage.warning('项目已在本地创建，但服务器登记失败，最近项目列表中可能看不到它')
+  }
+  if (typeof registered?.id === 'number') {
+    projectMeta.id = registered.id
+    await writeLocalJsonFile(directoryHandle, 'project.json', projectMeta)
+  }
+
+  currentProjectId.value = registered?.id ?? null
+  currentProjectName.value = projectName
+  currentProjectPath.value = directoryHandle.name || '已选择项目文件夹'
+  currentProjectDirectoryHandle.value = directoryHandle
+  currentSaveMode.value = 'manual'
+  syncAutoSaveTimer('manual')
+
+  const nextItem: RecentProjectItem = {
+    id: registered?.id ?? localRecentProjectId--,
+    title: projectName,
+    meta: `最近打开 · 刚刚 · ${currentProjectPath.value}`,
+    projectPath: currentProjectPath.value,
+    saveMode: 'manual',
+  }
   recentProjects.value = [
-    formatRecentProject(project),
-    ...recentProjects.value.filter(item => item.id !== project.id),
+    nextItem,
+    ...recentProjects.value.filter(item => item.id !== nextItem.id),
   ].slice(0, 8)
-  currentProjectId.value = project.id ?? null
-  currentProjectName.value = project.name
-  currentProjectPath.value = project.project_path
-  currentProjectDirectoryHandle.value = null
-  currentSaveMode.value = normalizeSaveMode(project.save_mode)
-  syncAutoSaveTimer(currentSaveMode.value)
+
   persistActiveProject()
   initializeEmptyAgentPanel()
   resetWorkspaceTransientState()
   closeCreateProjectFlow()
-  ElMessage.success(`已创建项目：${project.name}`)
+  ElMessage.success(`已创建项目：${projectName}`)
   await navigateToProject(currentProjectId.value)
 }
 
@@ -1180,22 +1231,10 @@ async function ensureCurrentProjectSaved() {
     return
   }
 
-  const directoryPicker = (window as Window & {
-    showDirectoryPicker?: () => Promise<{ name?: string }>
-  }).showDirectoryPicker
-
-  if (!directoryPicker) {
-    throw new Error('当前浏览器不支持选择文件夹，请使用 Chromium 内核浏览器')
-  }
-
-  try {
-    const handle = await directoryPicker()
-    currentProjectDirectoryHandle.value = handle as BrowserDirectoryHandle
-    currentProjectPath.value = handle?.name || '已选择文件夹'
-    ElMessage.success('已选择当前工程保存位置')
-  } catch {
-    throw new Error('USER_CANCELLED_DIRECTORY_PICKER')
-  }
+  const handle = await requestProjectDirectoryHandle()
+  currentProjectDirectoryHandle.value = handle
+  currentProjectPath.value = handle?.name || '已选择文件夹'
+  ElMessage.success('已选择当前工程保存位置')
 }
 
 async function readProjectDirectory(directoryHandle: BrowserDirectoryHandle) {
@@ -1341,11 +1380,6 @@ function normalizeSaveMode(value?: string): AutoSaveMode {
   return 'manual'
 }
 
-function isAbsoluteProjectPath(path: string | null) {
-  if (!path) return false
-  return /^[A-Za-z]:[\\/]/.test(path) || /^\\\\/.test(path)
-}
-
 function getCurrentTimestampParts(date = new Date()) {
   const year = String(date.getFullYear())
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -1465,23 +1499,14 @@ async function createLocalProjectBackup(saveMode: Exclude<AutoSaveMode, 'manual'
 }
 
 async function ensureAutoSaveWorkspace(saveMode: Exclude<AutoSaveMode, 'manual'>) {
-  if (currentProjectDirectoryHandle.value) {
-    await ensureLocalProjectWorkspace(saveMode)
-    currentSaveMode.value = saveMode
-    return
+  if (!currentProjectDirectoryHandle.value) {
+    const handle = await requestProjectDirectoryHandle()
+    currentProjectDirectoryHandle.value = handle
+    currentProjectPath.value = handle?.name || currentProjectPath.value || '已选择项目文件夹'
   }
 
-  const { project } = await ensureAutoSaveProject({
-    name: currentProjectName.value || buildAutoSaveProjectName(),
-    project_path: isAbsoluteProjectPath(currentProjectPath.value) ? currentProjectPath.value : null,
-    save_mode: saveMode,
-  })
-
-  currentProjectName.value = project.name
-  currentProjectPath.value = project.project_path
-  currentProjectDirectoryHandle.value = null
-  currentSaveMode.value = normalizeSaveMode(project.save_mode)
-  currentProjectId.value = project.id ?? currentProjectId.value
+  await ensureLocalProjectWorkspace(saveMode)
+  currentSaveMode.value = saveMode
   persistActiveProject()
 }
 
@@ -1489,22 +1514,16 @@ async function runAutoBackup() {
   const activeMode = currentSaveMode.value
   if (activeMode === 'manual') return
 
-  try {
-    if (currentProjectDirectoryHandle.value) {
-      await createLocalProjectBackup(activeMode)
-      return
-    }
-
-    const { project } = await createAutoBackup({
-      name: currentProjectName.value || buildAutoSaveProjectName(),
-      project_path: currentProjectPath.value,
-      save_mode: activeMode,
-    })
-
-    currentProjectId.value = project.id ?? currentProjectId.value
-    currentProjectName.value = project.name
-    currentProjectPath.value = project.project_path
+  if (!currentProjectDirectoryHandle.value) {
+    clearAutoSaveTimer()
+    currentSaveMode.value = 'manual'
     persistActiveProject()
+    ElMessage.warning('自动保存需要本地项目文件夹，请通过「打开项目」重新选择文件夹后再开启自动保存')
+    return
+  }
+
+  try {
+    await createLocalProjectBackup(activeMode)
   } catch (error) {
     clearAutoSaveTimer()
     currentSaveMode.value = 'manual'
@@ -1530,7 +1549,7 @@ async function handleSelectSaveMode(option: SaveModeOption) {
     isSaveModeOpen.value = false
     ElMessage.success(`已切换为：${option.label}`)
   } catch (error) {
-    if (error instanceof Error) {
+    if (error instanceof Error && error.message !== 'USER_CANCELLED_DIRECTORY_PICKER') {
       ElMessage.error(error.message || '设置自动保存模式失败')
     }
   } finally {

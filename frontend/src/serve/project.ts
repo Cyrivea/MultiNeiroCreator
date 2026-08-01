@@ -10,20 +10,8 @@ export interface ProjectPayload {
   last_opened_at?: string
 }
 
-export interface AutoSavePayload {
-  name?: string
-  project_path?: string | null
-  save_mode: string
-}
-
-export const createProject = (name?: string) =>
-  request.post<any, { project: ProjectPayload }>('/projects', { name })
+export const createProject = (name?: string, projectPath?: string) =>
+  request.post<any, { project: ProjectPayload }>('/projects', { name, project_path: projectPath })
 
 export const getRecentProjects = (limit = 8) =>
   request.get<any, { items: ProjectPayload[] }>(`/projects/recent?limit=${limit}`)
-
-export const ensureAutoSaveProject = (data: AutoSavePayload) =>
-  request.post<any, { project: ProjectPayload }>('/projects/auto-save/ensure', data)
-
-export const createAutoBackup = (data: AutoSavePayload) =>
-  request.post<any, { project: ProjectPayload; backup_file: string; backup_created_at: string }>('/projects/auto-save/backup', data)

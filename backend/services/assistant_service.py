@@ -12,26 +12,22 @@ from repositories.user_repo import get_profile, update_profile
 from services.rag import add_document, delete_document, get_document_chunks, list_documents, reindex_document, replace_document, search
 
 
-TOOL_TRIGGER_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "calculate": ("计算", "算一下", "等于", "+", "-", "*", "/", "加", "减", "乘", "除"),
-    "get_current_time": ("几点", "时间", "日期", "今天", "星期", "几号"),
-    "search_web": (
-        "新闻",
-        "最新",
-        "天气",
-        "股价",
-        "价格",
-        "最近",
-        "近况",
-        "实时",
-        "发生了什么",
-        "查询",
-        "搜索",
-    ),
-}
-
 MAX_ATTACHMENT_CONTEXT_CHARS = 12000
 MAX_RETRIEVED_CONTEXT_CHARS = 6000
+
+MAX_TOOL_ARG_LENGTH = 500
+
+
+def validate_tool_call(func_name: str, func_args: dict) -> str | None:
+    """校验模型返回的工具调用，返回错误信息；合法时返回 None。"""
+    if func_name not in tools_map:
+        return f"不支持的工具: {func_name}"
+    if not isinstance(func_args, dict):
+        return "工具参数格式错误"
+    for value in func_args.values():
+        if isinstance(value, str) and len(value) > MAX_TOOL_ARG_LENGTH:
+            return "工具参数过长"
+    return None
 
 
 def load_profile(user_id: int) -> str:
@@ -90,21 +86,9 @@ def rebuild_rag_document(filename: str, user_id: int, project_id: int | None = N
     return {"status": "success", "message": f"已重建文档索引: {filename}", "chunks_count": chunks_count}
 
 
-def should_enable_tools(message: str) -> bool:
-    normalized = (message or "").strip().lower()
-    if not normalized:
-        return False
-
-    for keywords in TOOL_TRIGGER_KEYWORDS.values():
-        if any(keyword in normalized for keyword in keywords):
-            return True
-
-    return False
-
-
 def extract_stream_content(chunk) -> str:
-    if isinstance(chunk, dict):
-        return chunk["choices"][0]["delta"].get("content", "")
+    if not chunk.choices:
+        return ""
 
     delta = chunk.choices[0].delta
     return delta.content if hasattr(delta, "content") and delta.content else ""
@@ -247,50 +231,71 @@ async def stream_chat(
     func_name = None
     reply = ""
 
-    if should_enable_tools(message):
-        response = client.chat.completions.create(model="glm-4-flash", messages=messages, tools=tools_schema)
-        msg = response.choices[0].message
+    first_stream = await asyncio.to_thread(
+        client.chat.completions.create,
+        model="glm-4-flash",
+        messages=messages,
+        tools=tools_schema,
+        stream=True,
+    )
 
-        if msg.tool_calls:
-            tool_call = msg.tool_calls[0]
-            func_name = tool_call.function.name
-            func_args = json.loads(tool_call.function.arguments)
-            yield f"data: {json.dumps({'type': 'tool', 'tool_name': func_name}, ensure_ascii=False)}\n\n"
-            result = tools_map[func_name].invoke(func_args)
-            messages.append(
-                {
-                    "role": "assistant",
-                    "tool_calls": [
-                        {
-                            "id": tool_call.id,
-                            "type": "function",
-                            "function": {"name": func_name, "arguments": tool_call.function.arguments},
-                        }
-                    ],
-                }
-            )
-            messages.append({"role": "tool", "content": result, "tool_call_id": tool_call.id})
-            final_stream = await asyncio.to_thread(
-                client.chat.completions.create,
-                model="glm-4-flash",
-                messages=messages,
-                stream=True,
-            )
+    tool_call_id = ""
+    func_args_raw = ""
+
+    for chunk in first_stream:
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta
+        tool_call_deltas = getattr(delta, "tool_calls", None)
+        if tool_call_deltas:
+            tool_call = tool_call_deltas[0]
+            tool_call_id = tool_call.id or tool_call_id
+            if tool_call.function:
+                func_name = tool_call.function.name or func_name
+                func_args_raw += tool_call.function.arguments or ""
+            continue
+        content = delta.content if getattr(delta, "content", None) else ""
+        if content:
+            reply += content
+            yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
+
+    if func_name:
+        try:
+            func_args = json.loads(func_args_raw)
+        except (json.JSONDecodeError, TypeError):
+            func_args = None
+        validation_error = (
+            "工具参数解析失败" if func_args is None else validate_tool_call(func_name, func_args)
+        )
+        yield f"data: {json.dumps({'type': 'tool', 'tool_name': func_name}, ensure_ascii=False)}\n\n"
+        if validation_error:
+            result = f"工具调用被拒绝：{validation_error}"
         else:
-            final_stream = [{"choices": [{"delta": {"content": msg.content}}]}]
-    else:
+            result = tools_map[func_name].invoke(func_args)
+        messages.append(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": tool_call_id,
+                        "type": "function",
+                        "function": {"name": func_name, "arguments": func_args_raw},
+                    }
+                ],
+            }
+        )
+        messages.append({"role": "tool", "content": result, "tool_call_id": tool_call_id})
         final_stream = await asyncio.to_thread(
             client.chat.completions.create,
             model="glm-4-flash",
             messages=messages,
             stream=True,
         )
-
-    for chunk in final_stream:
-        content = extract_stream_content(chunk)
-        if content:
-            reply += content
-            yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
+        for chunk in final_stream:
+            content = extract_stream_content(chunk)
+            if content:
+                reply += content
+                yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
 
     messages.append({"role": "assistant", "content": reply})
     if not (message or "").strip():
