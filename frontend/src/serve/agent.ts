@@ -1,5 +1,6 @@
 import request from '@/utils/request'
 import { API_BASE, TOKEN_KEY } from '@/constants'
+import { useUserStore } from '@/stores/user'
 
 export interface AgentAttachmentItem {
   name: string
@@ -102,7 +103,8 @@ export async function streamAgentChat(
     }
 
     if (response.status === 401) {
-      localStorage.clear()
+      // 与 utils/request.ts 保持一致：只清用户态，不连坐其他 localStorage 数据
+      useUserStore().logout()
       window.location.href = '/login'
     }
 

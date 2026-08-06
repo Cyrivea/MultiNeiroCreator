@@ -225,6 +225,14 @@ async function submitRegister() {
     regError.value = 'Please fill in all fields'
     return
   }
+  if (regForm.password.length < 8) {
+    regError.value = 'Password must be at least 8 characters'
+    return
+  }
+  if (new TextEncoder().encode(regForm.password).length > 72) {
+    regError.value = 'Password is too long'
+    return
+  }
   if (pwdMismatch.value) return
   regLoading.value = true
   regError.value = ''
@@ -239,7 +247,9 @@ async function submitRegister() {
     loadingStore.show('register')
     router.push('/workstation')
   } catch (e: any) {
-    regError.value = e.response?.data?.detail || 'Registration failed'
+    const detail = e.response?.data?.detail
+    // FastAPI 的 422 校验错误 detail 是数组，取第一条的 msg
+    regError.value = Array.isArray(detail) ? (detail[0]?.msg || 'Invalid input') : (detail || 'Registration failed')
   } finally {
     regLoading.value = false
   }

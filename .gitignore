@@ -17,16 +17,16 @@ __pycache__/
 chroma_db/
 data/
 *.db
+*.rdb
 *.log
 .vscode/
-backend_architecture_plan.md
+architecture.md
 git_push.md
-PROJECT_ASSESSMENT.md
-RUNBOOK.md
-PROJECT_ACTION_TODO.md
-DEV_ISSUES_LOG.md
+assessment.md
+todo_list.md
+solved.md
 CLAUDE.md
-PENDING_ISSUES.md
+unsolved.md
 
 # ===== 备份与临时文件 =====
 *.bak

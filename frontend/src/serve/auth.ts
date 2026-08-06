@@ -12,4 +12,4 @@ export const sendCode = (username: string) =>
   request.post<any, { status: string; message: string }>('/auth/send-code', { username, password: '' })
 
 export const register = (data: AuthPayload & { code: string }) =>
-  request.post<any, { token: string; username: string }>(`/auth/register?code=${data.code}`, { username: data.username, password: data.password })
+  request.post<any, { token: string; username: string }>('/auth/register', data)

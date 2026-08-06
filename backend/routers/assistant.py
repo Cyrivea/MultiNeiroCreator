@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from core.deps import verify_token
+from core.ratelimit import chat_rate_limit, enforce_upload_limits
 from schemas.chat import ChatRequest, ProfileRequest, RagDocumentDeleteRequest
 from services.assistant_service import (
     clear_history,
@@ -20,7 +21,7 @@ router = APIRouter(tags=["assistant"])
 
 
 @router.post("/chat")
-async def chat(req: ChatRequest, user=Depends(verify_token)):
+async def chat(req: ChatRequest, user=Depends(chat_rate_limit)):
     history = [item.model_dump() for item in req.history]
     return StreamingResponse(
         stream_chat(user, req.message, history, req.project_id, [item.model_dump() for item in req.attachments]),
@@ -55,6 +56,11 @@ async def upload_file(
     project_id: int | None = Query(None),
     user=Depends(verify_token),
 ):
+    # UploadFile 底层是 SpooledTemporaryFile（超阈值自动落盘），seek 到末尾即可拿到大小而不读入内存
+    file.file.seek(0, 2)
+    size = file.file.tell()
+    file.file.seek(0)
+    await enforce_upload_limits(user["id"], size)
     return await upload_document(file, user["id"], project_id)
 
 
