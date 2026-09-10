@@ -38,9 +38,6 @@ def get_profile_route(user=Depends(verify_token)):
     return {"profile": load_profile(user["id"])}
 
 
-# 以下同步路由故意声明为 def（非 async）：FastAPI 会把它们丢进线程池执行，
-# 同步 DB/chroma/embedding 调用不再阻塞事件循环（C1）。写成 async def 却内部
-# 全是同步调用，才是之前拖死全站的写法。
 
 
 @router.get("/history")

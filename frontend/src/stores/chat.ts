@@ -28,6 +28,9 @@ export function formatToolName(toolName: string) {
     calculate: '计算工具',
     get_current_time: '时间工具',
     search_web: '联网搜索',
+    generate_lyrics_block: '歌词生成',
+    configure_lyrics_workflow: '歌词工作流',
+    run_current_workflow: '运行工作流',
   }
 
   return toolMap[toolName] || toolName

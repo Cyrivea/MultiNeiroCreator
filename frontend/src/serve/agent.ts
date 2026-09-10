@@ -157,12 +157,19 @@ export interface AgentDoneEvent {
   citations: AgentCitation[]
 }
 
-type AgentStreamEvent = AgentToolEvent | AgentContentEvent | AgentDoneEvent
+export interface AgentWorkflowSnapshotEvent {
+  type: 'workflow_snapshot'
+  snapshot: unknown
+}
+
+type AgentStreamEvent =
+  AgentToolEvent | AgentContentEvent | AgentDoneEvent | AgentWorkflowSnapshotEvent
 
 interface AgentStreamHandlers {
   onTool?: (event: AgentToolEvent) => void
   onContent?: (event: AgentContentEvent) => void
   onDone?: (event: AgentDoneEvent) => void
+  onWorkflowSnapshot?: (event: AgentWorkflowSnapshotEvent) => void
 }
 
 // 解析单个 SSE 块并分发事件。单行损坏（坏 JSON / 未知类型）只丢弃该行，
@@ -186,6 +193,7 @@ function dispatchSseBlock(block: string, handlers: AgentStreamHandlers) {
   if (event.type === 'tool') handlers.onTool?.(event)
   else if (event.type === 'content') handlers.onContent?.(event)
   else if (event.type === 'done') handlers.onDone?.(event)
+  else if (event.type === 'workflow_snapshot') handlers.onWorkflowSnapshot?.(event)
   else console.warn('[SSE] 忽略未知事件类型:', (event as { type?: string }).type)
 }
 

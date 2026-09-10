@@ -34,7 +34,7 @@
         <div class="creative-tool-config-body">
           <div class="creative-tool-config-notice">
             <span aria-hidden="true">✦</span>
-            <span>{{ tool.inputHint }} · 当前为预输入配置</span>
+            <span>{{ tool.inputHint }} · 配置生成参数</span>
           </div>
 
           <div class="creative-input-section">
@@ -48,7 +48,7 @@
                 <strong>{{ mainInputLabel }}</strong>
                 <small>{{ mainInputDetail }} · {{ mainInputHint(tool.type) }}</small>
               </div>
-              <span class="creative-input-status">预输入</span>
+              <span class="creative-input-status">等待输入</span>
             </div>
           </div>
 
@@ -114,7 +114,7 @@
             <span class="creative-output-port-mark">⇥</span>
             <div>
               <strong>输出接口</strong>
-              <small>预期生成多版结果，用户选择后再进入下一节点</small>
+              <small>生成后结果会显示在当前面板</small>
             </div>
           </div>
 
@@ -148,7 +148,13 @@
             </div>
             <label class="creative-field">
               <span>情绪方向</span>
-              <input :value="tool.params.mood" @input="update('mood', $event)" />
+              <select :value="tool.params.mood" @change="update('mood', $event)">
+                <option>温柔、克制</option>
+                <option>明亮、轻快</option>
+                <option>忧郁、克制</option>
+                <option>热烈、昂扬</option>
+                <option>孤独、怀旧</option>
+              </select>
             </label>
           </template>
 
@@ -258,11 +264,44 @@
               </label>
             </div>
           </template>
+
+          <div
+            v-if="tool.type === 'lyrics' && toolRun?.status === 'succeeded'"
+            class="creative-generation-result"
+          >
+            <div class="creative-generation-result-head">
+              <span>歌词生成结果</span>
+              <span>智谱文本模型</span>
+            </div>
+            <pre>{{ toolRun.content }}</pre>
+          </div>
+          <div
+            v-else-if="tool.type === 'lyrics' && toolRun && toolRun.status !== 'running'"
+            class="creative-generation-error"
+          >
+            {{ toolRun.error ?? '歌词生成失败，请稍后重试' }}
+          </div>
         </div>
 
         <footer class="creative-tool-config-footer">
           <span>参数会自动保存</span>
-          <button type="button" class="creative-tool-save" @click="saveAndClose">确定</button>
+          <div class="creative-tool-config-actions">
+            <button type="button" class="creative-tool-save secondary" @click="saveAndClose">
+              保存参数
+            </button>
+            <button
+              v-if="tool.type === 'lyrics'"
+              type="button"
+              class="creative-tool-save"
+              :disabled="isLyricsGenerating"
+              @click="generateLyrics"
+            >
+              {{ isLyricsGenerating ? '生成中…' : '生成歌词' }}
+            </button>
+            <button v-else type="button" class="creative-tool-save" @click="saveAndClose">
+              确定
+            </button>
+          </div>
         </footer>
       </section>
     </Transition>
@@ -270,18 +309,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from '@/utils/toast'
 import { useCreativeToolsStore } from '@/stores/creativeTools'
+import { useToolRunsStore } from '@/stores/toolRuns'
 import { useWorkflowStore, WORKFLOW_INPUT_ID } from '@/stores/workflow'
 
 const emit = defineEmits<{ (event: 'close'): void }>()
 const creativeToolsStore = useCreativeToolsStore()
 const workflowStore = useWorkflowStore()
+const toolRunsStore = useToolRunsStore()
 const tool = computed(() => creativeToolsStore.activePanelTool)
 const references = computed(() => tool.value?.references ?? [])
+const toolRun = computed(() => (tool.value ? (toolRunsStore.records[tool.value.id] ?? null) : null))
+const isLyricsGenerating = computed(() => toolRun.value?.status === 'running')
 const mainInputSource = computed(() => {
-  const nodeId = tool.value ? `workflow-node-${tool.value.id}` : null
+  const nodeId = tool.value
+    ? (workflowStore.nodes.find((candidate) => candidate.toolId === tool.value!.id)?.id ?? null)
+    : null
   const edge = workflowStore.edges.find((item) => item.target === nodeId)
   if (!edge) return null
   if (edge.source === WORKFLOW_INPUT_ID) return '输入节点'
@@ -296,6 +341,14 @@ const mainInputDetail = computed(() =>
 const panelRef = ref<HTMLElement | null>(null)
 const textReferenceOpen = ref(false)
 const textReference = ref('')
+
+watch(
+  () => tool.value?.id,
+  () => {
+    textReferenceOpen.value = false
+    textReference.value = ''
+  },
+)
 
 function update(key: string, event: Event) {
   const target = event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
@@ -325,7 +378,7 @@ function handleFileChange(event: Event) {
   creativeToolsStore.addReference(tool.value.id, {
     type,
     name: file.name,
-    detail: `${Math.ceil(file.size / 1024)} KB · 预输入本地引用`,
+    detail: `${Math.ceil(file.size / 1024)} KB · 本地参考文件`,
   })
   input.value = ''
 }
@@ -344,6 +397,36 @@ function addTextReference() {
 
 function removeReference(referenceId: string) {
   if (tool.value) creativeToolsStore.removeReference(tool.value.id, referenceId)
+}
+
+async function generateLyrics() {
+  const currentTool = tool.value
+  if (!currentTool || currentTool.type !== 'lyrics' || isLyricsGenerating.value) return
+
+  const theme = currentTool.params.theme?.trim()
+  if (!theme) {
+    ElMessage.warning('请先填写创作主题')
+    return
+  }
+
+  toolRunsStore.setRecord(currentTool.id, { status: 'running', content: null, error: null })
+  creativeToolsStore.saveTool(currentTool.id)
+  try {
+    const status = await workflowStore.runCurrentWorkflow()
+    const record = toolRunsStore.records[currentTool.id]
+    if (status === 'succeeded') {
+      ElMessage.success('歌词生成完成')
+    } else {
+      ElMessage.error(record?.error ?? '歌词生成失败，请稍后重试')
+    }
+  } catch {
+    toolRunsStore.setRecord(currentTool.id, {
+      status: 'failed',
+      content: null,
+      error: '歌词生成请求失败，请稍后重试',
+    })
+    ElMessage.error('歌词生成请求失败，请稍后重试')
+  }
 }
 
 function saveAndClose() {
@@ -776,6 +859,47 @@ function artMark(type: string) {
   font-size: 10px;
 }
 
+.creative-generation-result,
+.creative-generation-error {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(159, 182, 222, 0.2);
+  border-radius: 8px;
+  background: rgba(159, 182, 222, 0.05);
+}
+
+.creative-generation-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #cbd8ef;
+  font-size: 11px;
+}
+
+.creative-generation-result-head span:last-child {
+  color: #777f8e;
+  font-size: 9px;
+}
+
+.creative-generation-result pre {
+  max-height: 360px;
+  margin: 10px 0 0;
+  overflow: auto;
+  color: #d8d8d8;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.creative-generation-error {
+  border-color: rgba(220, 170, 170, 0.22);
+  color: #d9aaaa;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
 .creative-tool-config-footer {
   display: flex;
   align-items: center;
@@ -788,6 +912,22 @@ function artMark(type: string) {
 .creative-tool-config-footer > span {
   color: #777;
   font-size: 10px;
+}
+
+.creative-tool-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.creative-tool-save.secondary {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #cfcfcf !important;
+}
+
+.creative-tool-save:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .creative-tool-save {

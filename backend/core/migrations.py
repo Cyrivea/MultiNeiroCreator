@@ -211,6 +211,29 @@ def _m006_add_message_citations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE messages ADD COLUMN citations_json TEXT")
 
 
+def _m007_create_workflow_drafts(conn: sqlite3.Connection) -> None:
+    """保存每个项目的唯一 Workflow Draft；nodes/edges 由后端作为 JSON 校验后持久化。"""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS workflow_drafts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+            project_id_key INTEGER GENERATED ALWAYS AS (COALESCE(project_id, -1)) STORED,
+            revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+            draft_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(user_id, project_id_key)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_workflow_drafts_user_project "
+        "ON workflow_drafts(user_id, project_id)"
+    )
+
+
 MIGRATIONS: list[Migration] = [
     ("baseline: users/messages/projects + indexes", _m001_baseline),
     ("add foreign keys via table rebuild", _m002_add_foreign_keys),
@@ -218,6 +241,7 @@ MIGRATIONS: list[Migration] = [
     ("create document lifecycle table", _m004_create_documents),
     ("add document content hash", _m005_add_document_hash),
     ("add message citation metadata", _m006_add_message_citations),
+    ("create workflow drafts", _m007_create_workflow_drafts),
 ]
 
 

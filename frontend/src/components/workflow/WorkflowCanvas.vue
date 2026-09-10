@@ -119,7 +119,17 @@
             <span class="workflow-node-number">{{ toolIndex(node.id) }}</span>
           </div>
           <p>{{ node.description }}</p>
-          <div class="workflow-node-footer">主要输入 · 补充参考 · 生成设置</div>
+          <div class="workflow-node-footer">
+            <template v-if="node.runStatus === 'running'">生成中…</template>
+            <template v-else-if="node.runStatus === 'succeeded'"
+              >已完成 · 结果已写入参数面板</template
+            >
+            <template v-else-if="node.runStatus === 'failed'"
+              >执行失败 · 请在参数面板查看原因</template
+            >
+            <template v-else-if="node.runStatus === 'model_unavailable'">模型尚未配置</template>
+            <template v-else>主要输入 · 补充参考 · 生成设置</template>
+          </div>
         </template>
       </article>
     </div>

@@ -17,10 +17,11 @@ from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
 
-def _discover_tools() -> dict[str, BaseTool]:
+def _discover_tools() -> tuple[dict[str, BaseTool], dict[str, str]]:
     import agents.tools as tools_pkg
 
     registry: dict[str, BaseTool] = {}
+    capability_registry: dict[str, str] = {}
     for mod_info in pkgutil.iter_modules(tools_pkg.__path__):
         if mod_info.name.startswith("_") or mod_info.name == "registry":
             continue
@@ -33,8 +34,11 @@ def _discover_tools() -> dict[str, BaseTool]:
                 # 启动即失败：重名工具是配置错误，跑起来再暴露只会更难查
                 raise RuntimeError(f"工具重名冲突: {obj.name}（{mod_info.name} 与既有注册冲突）")
             registry[obj.name] = obj
-    return registry
+            capability_id = getattr(module, "CAPABILITY_ID", None)
+            if capability_id:
+                capability_registry[obj.name] = capability_id
+    return registry, capability_registry
 
 
-tools_map: dict[str, BaseTool] = _discover_tools()
+tools_map, capability_map = _discover_tools()
 tools_schema: list[dict] = [convert_to_openai_tool(t) for t in tools_map.values()]

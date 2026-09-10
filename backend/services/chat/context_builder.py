@@ -187,11 +187,12 @@ async def build_chat_context(
     """并行构建附件上下文和普通 RAG 上下文，单个分支失败不连坐。"""
     rag_started = time.perf_counter()
     try:
-        attachment_result, retrieved_result = await asyncio.gather(
+        results: list[object] = await asyncio.gather(
             asyncio.to_thread(build_attachment_context, user_id, project_id, attachments),
             asyncio.to_thread(build_retrieved_context, user_id, message, project_id),
             return_exceptions=True,
         )
+        attachment_result, retrieved_result = results
         attachment_context, attachment_citations = (
             attachment_result if isinstance(attachment_result, tuple) else ("", [])
         )

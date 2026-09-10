@@ -12,14 +12,17 @@ from core.ratelimit import redis_client
 from core.request_context import RequestContextMiddleware
 from routers.assistant import router as assistant_router
 from routers.auth import router as auth_router
+from routers.capabilities import router as capabilities_router
 from routers.jobs import router as jobs_router
 from routers.projects import router as projects_router
+from routers.workflows import router as workflows_router
 
 setup_logging()
 logger = logging.getLogger("main")
 
 # 生产环境关闭交互式 API 文档（/docs /redoc /openapi.json），减少攻击面
 app = FastAPI(
+    title="Neyria API",
     docs_url=None if IS_PRODUCTION else "/docs",
     redoc_url=None if IS_PRODUCTION else "/redoc",
     openapi_url=None if IS_PRODUCTION else "/openapi.json",
@@ -41,8 +44,10 @@ register_exception_handlers(app)
 
 app.include_router(auth_router)
 app.include_router(assistant_router)
+app.include_router(capabilities_router)
 app.include_router(projects_router)
 app.include_router(jobs_router)
+app.include_router(workflows_router)
 
 
 @app.get("/health")

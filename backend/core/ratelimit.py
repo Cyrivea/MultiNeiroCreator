@@ -114,6 +114,13 @@ async def chat_rate_limit(user=Depends(verify_token)) -> dict:
     return user
 
 
+async def capability_rate_limit(user=Depends(verify_token)) -> dict:
+    """生产能力直接调用限流；Assistant 调用已经由 /chat 单独限流。"""
+    wait = await hit("capability_min", str(user["id"]), config.CAPABILITY_RATE_PER_MINUTE, 60)
+    if wait is not None:
+        raise HTTPException(status_code=429, detail=f"创作请求过于频繁，请 {wait} 秒后再试")
+    return user
+
 async def login_rate_limit(req: AuthRequest, request: Request) -> None:
     wait = await hit("login", f"{_client_ip(request)}:{req.username}", config.LOGIN_RATE_PER_MINUTE, 60)
     if wait is not None:

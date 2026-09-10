@@ -23,13 +23,14 @@ from starlette.concurrency import iterate_in_threadpool
 from agents.neyria import client
 from agents.tools.registry import tools_map, tools_schema
 from repositories.chat_repo import append_message
+from services.capabilities import CapabilityContext, use_capability_context
 from services.chat.context_builder import build_chat_context
 from services.chat.tool_executor import execute_tool
 
-CHAT_MODEL = "glm-4-flash"  # E4 会把模型名收进 config，先收敛到单一常量
+CHAT_MODEL = "glm-4-flash"
 
-MAX_TOOL_ROUNDS = 5  # 最多允许模型连续请求工具的轮数
-MAX_TOOL_CALLS_PER_ROUND = 5  # 单轮最多执行的工具调用数
+MAX_TOOL_ROUNDS = 5
+MAX_TOOL_CALLS_PER_ROUND = 5
 
 TOOL_LIMIT_NOTICE = (
     "已达到本次对话的工具调用轮数上限，请基于已获得的信息直接给出最终回答，不要再请求任何工具。"
@@ -78,10 +79,38 @@ def _could_be_textual_tool_call_prefix(text: str) -> bool:
 
 
 def _tools_for_context(has_knowledge_context: bool) -> list[dict]:
-    """有私有资料时锁住联网工具；无命中时只保留计算和联网后备。"""
+    """有私有资料时锁住联网工具；无命中时只保留计算和联网后备。
+
+    ``generate_lyrics_block`` 只对 Workflow Runner 内部使用——Assistant 必须通过
+    configure_lyrics_workflow/run_current_workflow 操作画布，不能绕过 Workflow
+    直接生成一首歌词丢回聊天框。
+    """
+    direct_capability_tools = {"generate_lyrics_block"}
     if has_knowledge_context:
-        return [tool for tool in tools_schema if tool.get("function", {}).get("name") != WEB_SEARCH_TOOL_NAME]
-    return [tool for tool in tools_schema if tool.get("function", {}).get("name") != "get_current_time"]
+        return [
+            tool
+            for tool in tools_schema
+            if tool.get("function", {}).get("name") not in {WEB_SEARCH_TOOL_NAME}
+            | direct_capability_tools
+        ]
+    return [
+        tool
+        for tool in tools_schema
+        if tool.get("function", {}).get("name") not in {"get_current_time"}
+        | direct_capability_tools
+    ]
+
+
+def split_ui_events(result_text: str) -> tuple[str, list[dict]]:
+    """把工具结果里的 ``_ui_events`` 剥出来转成界面事件，模型只看到业务摘要。"""
+    try:
+        payload = json.loads(result_text)
+    except (json.JSONDecodeError, TypeError):
+        return result_text, []
+    if not isinstance(payload, dict) or not isinstance(payload.get("_ui_events"), list):
+        return result_text, []
+    events = [event for event in payload.pop("_ui_events") if isinstance(event, dict)]
+    return json.dumps(payload, ensure_ascii=False), events
 
 
 def extract_stream_content(chunk) -> str:
@@ -251,9 +280,21 @@ async def _orchestrate(
                 continue
             yield _sse({"type": "tool", "tool_name": call["name"]})
             # 跑腿的绝不抛异常：成功/被拒/失败都是一张结果单，这里不分叉
-            outcome = await execute_tool(call["name"], call["arguments"])
+            with use_capability_context(
+                CapabilityContext(
+                    user_id=user["id"],
+                    project_id=project_id,
+                    source="assistant",
+                )
+            ):
+                outcome = await execute_tool(call["name"], call["arguments"])
+            # 工具可以携带界面事件（如 Workflow Draft 快照），立即透传给前端；
+            # 剥离后再回填模型，避免模型把 Draft 当成歌词内容。
+            model_result, ui_events = split_ui_events(outcome.result)
+            for ui_event in ui_events:
+                yield _sse(ui_event)
             tools_used.append(call["name"])
-            messages.append({"role": "tool", "content": outcome.result, "tool_call_id": call["id"]})
+            messages.append({"role": "tool", "content": model_result, "tool_call_id": call["id"]})
 
     tool_used = tools_used[-1] if tools_used else None
 
@@ -266,7 +307,7 @@ async def _orchestrate(
         project_id,
         ctx.attachments,
     )
-    assistant_history_item = {"role": "assistant", "content": reply}
+    assistant_history_item: dict = {"role": "assistant", "content": reply}
     if ctx.citations:
         assistant_history_item["citations"] = ctx.citations
     clean_history.append(assistant_history_item)

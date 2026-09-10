@@ -7,8 +7,20 @@ function-calling 格式的 tools_schema——名称/描述/参数/执行函数�
 from agents.tools import registry
 
 
-def test_all_three_tools_discovered():
-    assert set(registry.tools_map) == {"calculate", "get_current_time", "search_web"}
+def test_all_tools_discovered():
+    assert set(registry.tools_map) == {
+        "calculate",
+        "get_current_time",
+        "search_web",
+        "generate_lyrics_block",
+        "configure_lyrics_workflow",
+        "run_current_workflow",
+    }
+    assert registry.capability_map == {
+        "generate_lyrics_block": "lyrics.generate",
+        "configure_lyrics_workflow": "workflow.control",
+        "run_current_workflow": "workflow.control",
+    }
 
 
 def test_schema_matches_map():

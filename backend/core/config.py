@@ -37,6 +37,7 @@ if not SECRET_KEY:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
 API_KEY = os.getenv("API_KEY", "").strip()
+LYRICS_MODEL = os.getenv("LYRICS_MODEL", "glm-4-flash").strip()
 SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "").strip()
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3").strip()
 EMBEDDING_API_URL = os.getenv("EMBEDDING_API_URL", "https://api.siliconflow.cn/v1/embeddings").strip()
@@ -53,6 +54,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 CHAT_RATE_PER_MINUTE = int(os.getenv("CHAT_RATE_PER_MINUTE", "10"))
 CHAT_RATE_PER_DAY = int(os.getenv("CHAT_RATE_PER_DAY", "200"))
+CAPABILITY_RATE_PER_MINUTE = int(os.getenv("CAPABILITY_RATE_PER_MINUTE", "5"))
 LOGIN_RATE_PER_MINUTE = int(os.getenv("LOGIN_RATE_PER_MINUTE", "5"))  # 每 IP+邮箱
 REGISTER_RATE_PER_MINUTE = int(os.getenv("REGISTER_RATE_PER_MINUTE", "5"))  # 每 IP
 CODE_SEND_COOLDOWN_SECONDS = int(os.getenv("CODE_SEND_COOLDOWN_SECONDS", "60"))

@@ -5,13 +5,15 @@
 三种结局的差异只体现在日志里（排障用），不体现在控制流上。
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import time
 from dataclasses import dataclass
 
-from agents.tools.registry import tools_map
+from agents.tools.registry import capability_map, tools_map
 
 logger = logging.getLogger("assistant")
 
@@ -39,7 +41,7 @@ def validate_tool_call(func_name: str, func_args: dict) -> str | None:
 
 
 async def execute_tool(func_name: str, func_args_raw: str) -> ToolOutcome:
-    """执行一次工具调用：解析参数 → 校验 → 线程池里跑（同步工具不阻塞事件循环）。"""
+    """执行一次工具调用；同步工具和生产能力都不会阻塞聊天事件循环。"""
     try:
         func_args = json.loads(func_args_raw)
     except (json.JSONDecodeError, TypeError):
@@ -47,18 +49,25 @@ async def execute_tool(func_name: str, func_args_raw: str) -> ToolOutcome:
     error = "工具参数解析失败" if func_args is None else validate_tool_call(func_name, func_args)
     if error:
         logger.warning(
-            "工具调用被拒绝: %s", error,
+            "工具调用被拒绝: %s",
+            error,
             extra={"evt": "tool_rejected", "tool": func_name, "reason": error},
         )
         return ToolOutcome(result=f"工具调用被拒绝：{error}", ok=False)
 
     started = time.perf_counter()
     try:
-        # 同步工具（如联网搜索可阻塞 5s+）必须丢线程池，否则阻塞事件循环拖死其他用户的 SSE
-        result = await asyncio.to_thread(tools_map[func_name].invoke, func_args)
+        if func_name in capability_map:
+            # Agent 请求上下文由编排器通过 Capability Runtime 的 ContextVar 绑定；
+            # 它不会混进模型可见的工具参数。
+            result = await tools_map[func_name].ainvoke(func_args)
+        else:
+            # 同步工具（如联网搜索可阻塞 5s+）必须丢线程池，否则阻塞事件循环拖死其他用户的 SSE。
+            result = await asyncio.to_thread(tools_map[func_name].invoke, func_args)
     except Exception as exc:
         logger.exception(
-            "工具执行失败: %s", type(exc).__name__,
+            "工具执行失败: %s",
+            type(exc).__name__,
             extra={
                 "evt": "tool_error",
                 "tool": func_name,

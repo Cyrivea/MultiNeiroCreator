@@ -32,6 +32,9 @@ solved.md
 CLAUDE.md
 unsolved.md
 
+# ===== 本地开发复盘（不进仓库） =====
+lyrics-block-development-notes.md
+
 # ===== 编辑器与工具目录 =====
 .vscode/
 .claude/

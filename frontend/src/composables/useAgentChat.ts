@@ -18,6 +18,8 @@ import { cloneAttachmentForMessage, hydrateAttachmentFromPayload } from '@/utils
 import { useChatStore, type AgentMessage } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
 import { useTaskStore } from '@/stores/tasks'
+import { useWorkflowStore } from '@/stores/workflow'
+import type { WorkflowDraft } from '@/serve/workflow'
 
 const AGENT_FIRST_TOKEN_TIMEOUT_MS = 10000
 
@@ -30,6 +32,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
   const chatStore = useChatStore()
   const projectStore = useProjectStore()
   const taskStore = useTaskStore()
+  const workflowStore = useWorkflowStore()
 
   let thinkingTimer: number | null = null
   let firstTokenTimeout: number | null = null
@@ -198,6 +201,11 @@ export function useAgentChat(options: UseAgentChatOptions) {
               chatStore.hasAgentStartedReplying = true
             }
             typewriter.push(event.content)
+          },
+          onWorkflowSnapshot(event) {
+            // AI 通过后端的 Workflow 命令改动画布：把 Draft 快照交给 workflow store，
+            // 同时桥接成左侧 Block 实例，参数/结果/状态与画布节点同步。
+            workflowStore.applyWorkflowSnapshot(event.snapshot as WorkflowDraft)
           },
           async onDone(event) {
             // 等缓冲吐完再用服务端历史整体替换消息列表，避免文字瞬间跳到全量

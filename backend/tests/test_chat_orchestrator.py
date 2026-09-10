@@ -201,6 +201,42 @@ def test_single_tool(monkeypatch, persisted):
     assert second_messages[-1] == {"role": "tool", "content": "2", "tool_call_id": "call_1"}
 
 
+def test_workflow_tools_emit_ui_snapshot_events_not_lyrics(monkeypatch, persisted):
+    """配置了 Workflow 后，编排器把 _ui_events 透传给前端、剥离后回填模型。"""
+    snapshot = {"nodes": [{"id": "n1", "capability_id": "lyrics.generate"}], "edges": []}
+
+    async def fake_execute(func_name, func_args):
+        assert func_name == "configure_lyrics_workflow"
+        return ToolOutcome(
+            result=json.dumps(
+                {
+                    "status": "configured",
+                    "_ui_events": [{"type": "workflow_snapshot", "snapshot": snapshot}],
+                },
+                ensure_ascii=False,
+            ),
+            ok=True,
+        )
+
+    monkeypatch.setattr(chat_orchestrator, "execute_tool", fake_execute)
+    fake, events = run_chat(
+        monkeypatch,
+        [
+            tool_call_stream(
+                (0, "call_cfg", "configure_lyrics_workflow", '{"theme": "夏夜城市"}')
+            ),
+            content_stream("已创建歌词节点"),
+        ],
+    )
+
+    snapshots = [event for event in events if event["type"] == "workflow_snapshot"]
+    assert snapshots and snapshots[0]["snapshot"] == snapshot
+    # 回填模型的内容不得携带 _ui_events，也不含歌词正文外的 Draft
+    tool_message = next(m for m in fake.calls[1]["messages"] if m["role"] == "tool")
+    assert "_ui_events" not in tool_message["content"]
+    assert json.loads(tool_message["content"])["status"] == "configured"
+
+
 def test_multiple_tools_in_one_round(monkeypatch, persisted):
     script = [
         tool_call_stream(

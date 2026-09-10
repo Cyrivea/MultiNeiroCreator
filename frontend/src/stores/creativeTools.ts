@@ -153,16 +153,32 @@ export const useCreativeToolsStore = defineStore('creativeTools', () => {
   }
 
   function addTool(type: CreativeToolType) {
+    return createToolInstance(createId(), type, { ...catalogItem(type).defaults })
+  }
+
+  /** 后端/AI 创建或更新节点时，把它们映射成同 ID 的 Block 实例，供参数面板和画布联动。 */
+  function ensureToolInstance(id: string, type: CreativeToolType, params?: Record<string, string>) {
+    const existing = instances.value.find((item) => item.id === id)
+    if (existing) {
+      if (params) existing.params = { ...existing.params, ...params }
+      existing.updatedAt = new Date().toISOString()
+      persist()
+      return existing
+    }
+    return createToolInstance(id, type, { ...catalogItem(type).defaults, ...(params ?? {}) })
+  }
+
+  function createToolInstance(id: string, type: CreativeToolType, params: Record<string, string>) {
     const item = catalogItem(type)
     const instance: CreativeToolInstance = {
-      id: createId(),
+      id,
       type: item.type,
       name: item.name,
       description: item.description,
       badge: item.badge,
       color: item.color,
       inputHint: item.inputHint,
-      params: { ...item.defaults },
+      params,
       references: [],
       updatedAt: new Date().toISOString(),
     }
@@ -239,6 +255,7 @@ export const useCreativeToolsStore = defineStore('creativeTools', () => {
     hasTools,
     loadForProject,
     addTool,
+    ensureToolInstance,
     selectTool,
     updateParam,
     saveTool,

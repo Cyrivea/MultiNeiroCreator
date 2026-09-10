@@ -1,6 +1,16 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { CreativeToolInstance } from './creativeTools'
+import type { CreativeToolInstance, CreativeToolType } from './creativeTools'
+import { useCreativeToolsStore } from './creativeTools'
+import { useToolRunsStore, type ToolRunStatus } from './toolRuns'
+import {
+  getWorkflowDraft,
+  saveWorkflowDraft,
+  runWorkflow,
+  type WorkflowDraft,
+  type WorkflowDraftNode,
+  type WorkflowDraftResponse,
+} from '@/serve/workflow'
 
 export type WorkflowCanvasMode = 'select' | 'pan'
 export type WorkflowEndpoint = 'input' | 'output'
@@ -18,6 +28,12 @@ export interface WorkflowNode {
   color: string
   x: number
   y: number
+  // 后端/AI 管理的节点会带 capabilityId，与 capability Runtime 的能力 ID 对应
+  capabilityId?: string
+  params?: Record<string, string>
+  runStatus?: ToolRunStatus
+  result?: { format?: string; content?: string } | null
+  error?: string | null
 }
 
 export interface WorkflowEdge {
@@ -37,7 +53,15 @@ export interface WorkflowSnapshot {
 }
 
 function cloneNodes(nodes: WorkflowNode[]) {
-  return nodes.map((node) => ({ ...node }))
+  return nodes.map((node) => ({
+    ...node,
+    ...(node.params ? { params: { ...node.params } } : {}),
+    ...(node.result
+      ? { result: { ...node.result } }
+      : node.result === undefined
+        ? {}
+        : { result: null }),
+  }))
 }
 
 function cloneEdges(edges: WorkflowEdge[]) {
@@ -59,6 +83,17 @@ function positionForIndex(index: number) {
   }
 }
 
+const CAPABILITY_TO_TOOL_TYPE: Record<string, CreativeToolType> = {
+  'lyrics.generate': 'lyrics',
+}
+
+const TOOL_TYPE_TO_CAPABILITY: Record<CreativeToolType, string> = {
+  lyrics: 'lyrics.generate',
+  image: 'image.generate',
+  video: 'video.generate',
+  audio: 'audio.generate',
+}
+
 export const useWorkflowStore = defineStore('workflow', () => {
   const nodes = ref<WorkflowNode[]>([])
   const edges = ref<WorkflowEdge[]>([])
@@ -72,7 +107,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const offset = ref({ x: 0, y: 0 })
   const undoStack = ref<WorkflowSnapshot[]>([])
   const redoStack = ref<WorkflowSnapshot[]>([])
+  // 后端 Draft 状态：AI/用户共用的唯一真源；本地 localStorage 退化为缓存
+  const revision = ref(0)
+  const workflowId = ref<number | null>(null)
+  const isApplyingRemote = ref(false)
+  const currentProjectId = ref<number | null>(null)
   let currentStorageKey = 'mnc-workflow-draft'
+  let serverSaveTimer: number | null = null
 
   const selectedNode = computed(
     () => nodes.value.find((node) => node.id === selectedNodeId.value) ?? null,
@@ -97,8 +138,196 @@ export const useWorkflowStore = defineStore('workflow', () => {
         endpointPositions: endpointPositions.value,
         selectedNodeId: selectedNodeId.value,
         selectedNodeIds: selectedNodeIds.value,
+        revision: revision.value,
+        workflowId: workflowId.value,
       }),
     )
+    scheduleServerSave()
+  }
+
+  function scheduleServerSave() {
+    if (isApplyingRemote.value) return
+    if (serverSaveTimer !== null) window.clearTimeout(serverSaveTimer)
+    serverSaveTimer = window.setTimeout(() => {
+      serverSaveTimer = null
+      void saveDraftToServer()
+    }, 600)
+  }
+
+  /** 前端的节点/连线/端点位置 → 后端 Draft（端点也作为节点保存）。 */
+  function buildDraftPayload(): WorkflowDraft {
+    const toolNodes: WorkflowDraftNode[] = nodes.value.map((node) => ({
+      id: node.id,
+      kind: 'tool',
+      toolId: node.toolId,
+      type: node.type,
+      capability_id: node.capabilityId ?? TOOL_TYPE_TO_CAPABILITY[node.type],
+      name: node.name,
+      badge: node.badge,
+      description: node.description,
+      color: node.color,
+      x: node.x,
+      y: node.y,
+      params: node.params,
+      runStatus: node.runStatus,
+      result: node.result ?? null,
+      error: node.error ?? null,
+    }))
+    const inputPosition = endpointPositions.value.input ?? { x: 36, y: 280 }
+    const maxX = Math.max(1120, ...nodes.value.map((node) => node.x + 236))
+    const outputPosition = endpointPositions.value.output ?? { x: maxX + 170, y: 280 }
+    return {
+      nodes: [
+        {
+          id: WORKFLOW_INPUT_ID,
+          kind: 'endpoint',
+          endpoint: 'input',
+          name: '输入',
+          description: '主题、初始文本和参考文件',
+          x: inputPosition.x,
+          y: inputPosition.y,
+        },
+        ...toolNodes,
+        {
+          id: WORKFLOW_OUTPUT_ID,
+          kind: 'endpoint',
+          endpoint: 'output',
+          name: '输出',
+          description: '展示、保存和导出最终结果',
+          x: outputPosition.x,
+          y: outputPosition.y,
+        },
+      ],
+      edges: cloneEdges(edges.value),
+    }
+  }
+
+  /** 把后端/AI 管理的节点映射成本地 Block 实例，供参数面板、连线和左侧列表继续使用现有交互。 */
+  function bridgeServerManagedNodes(toolNodes: WorkflowDraftNode[]) {
+    const creativeToolsStore = useCreativeToolsStore()
+    const toolRunsStore = useToolRunsStore()
+    for (const node of toolNodes) {
+      if (!node.capability_id || !node.toolId) continue
+      const toolType = CAPABILITY_TO_TOOL_TYPE[node.capability_id]
+      if (!toolType) continue
+      creativeToolsStore.ensureToolInstance(node.toolId, toolType, node.params)
+      if (node.runStatus) {
+        toolRunsStore.setRecord(node.toolId, {
+          status: node.runStatus,
+          content: node.result?.content ?? null,
+          error: node.error ?? null,
+        })
+      }
+      node.params = creativeToolsStore.instances.find((item) => item.id === node.toolId)?.params
+    }
+  }
+
+  /** 应用后端 Draft（AI 改图、改参、运行状态都从这里进入画布）。 */
+  function applyWorkflowSnapshot(
+    draft: WorkflowDraft,
+    nextRevision?: number,
+    nextId?: number | null,
+  ) {
+    isApplyingRemote.value = true
+    try {
+      const rawNodes = Array.isArray(draft.nodes) ? draft.nodes : []
+      const endpointNodes = rawNodes.filter((node) => node.kind === 'endpoint')
+      const toolNodes = rawNodes.filter((node) => node.kind !== 'endpoint')
+      bridgeServerManagedNodes(toolNodes)
+      const nextEndpointPositions: Partial<Record<WorkflowEndpoint, WorkflowEndpointPosition>> = {}
+      for (const endpointNode of endpointNodes) {
+        if (endpointNode.endpoint === 'input' || endpointNode.endpoint === 'output') {
+          nextEndpointPositions[endpointNode.endpoint] = {
+            x: Number(endpointNode.x ?? 0),
+            y: Number(endpointNode.y ?? 0),
+          }
+        }
+      }
+      nodes.value = toolNodes
+        .map((node) => ({
+          id: String(node.id),
+          toolId: String(node.toolId ?? node.id),
+          type: (node.type as CreativeToolType) ?? 'lyrics',
+          name: String(node.name ?? '生成工具'),
+          badge: String(node.badge ?? ''),
+          description: String(node.description ?? ''),
+          color: String(node.color ?? '#b7b7b7'),
+          x: Number(node.x ?? 0),
+          y: Number(node.y ?? 0),
+          capabilityId: node.capability_id,
+          params: node.params,
+          runStatus: node.runStatus,
+          result: node.result ?? null,
+          error: node.error ?? null,
+        }))
+        .filter((node) => node.id)
+      edges.value = Array.isArray(draft.edges) ? cloneEdges(draft.edges) : []
+      if (nextEndpointPositions.input) {
+        endpointPositions.value = { ...endpointPositions.value, ...nextEndpointPositions }
+      }
+      if (nextRevision != null) revision.value = nextRevision
+      if (nextId !== undefined) workflowId.value = nextId
+      selectedNodeId.value = null
+      selectedNodeIds.value = []
+      // 只写本地缓存，不再回写服务器——这条数据就来自服务器
+      localStorage.setItem(
+        currentStorageKey,
+        JSON.stringify({
+          nodes: nodes.value,
+          edges: edges.value,
+          endpointPositions: endpointPositions.value,
+          revision: revision.value,
+          workflowId: workflowId.value,
+        }),
+      )
+    } finally {
+      isApplyingRemote.value = false
+    }
+  }
+
+  async function refreshFromServer(projectId: number | null) {
+    try {
+      const response = await getWorkflowDraft(projectId)
+      // 本地有用户手动搭的内容而服务器还是默认草稿：把本地迁移上去
+      if (response.revision === 0 && nodes.value.length > 0) {
+        revision.value = response.revision
+        workflowId.value = response.id
+        await saveDraftToServer()
+        return
+      }
+      applyWorkflowSnapshot(response.draft, response.revision, response.id)
+    } catch {
+      // 网络失败时保持本地面布可用
+    }
+  }
+
+  async function saveDraftToServer() {
+    if (isApplyingRemote.value) return
+    try {
+      const response: WorkflowDraftResponse = await saveWorkflowDraft(
+        currentProjectId.value,
+        buildDraftPayload(),
+        revision.value,
+      )
+      isApplyingRemote.value = true
+      try {
+        revision.value = response.revision
+        workflowId.value = response.id
+      } finally {
+        isApplyingRemote.value = false
+      }
+    } catch (error) {
+      // 409：服务器已有更新的 Draft（例如 AI 先改了），拉取最新版避免覆盖
+      const status = (error as { response?: { status?: number } }).response?.status
+      if (status === 409) await refreshFromServer(currentProjectId.value)
+    }
+  }
+
+  async function runCurrentWorkflow(): Promise<ToolRunStatus> {
+    await saveDraftToServer()
+    const result = await runWorkflow(currentProjectId.value)
+    applyWorkflowSnapshot(result.draft, result.revision, result.id)
+    return result.status
   }
 
   function clearSelection() {
@@ -108,6 +337,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   function loadForProject(projectId: number | null) {
+    currentProjectId.value = projectId
     currentStorageKey = projectId == null ? 'mnc-workflow-draft' : `mnc-workflow-draft:${projectId}`
     undoStack.value = []
     redoStack.value = []
@@ -121,6 +351,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         endpointPositions.value = { input: { x: 36, y: 280 } }
         selectedNodeId.value = null
         selectedNodeIds.value = []
+        void refreshFromServer(projectId)
         return
       }
       const parsed = JSON.parse(raw) as {
@@ -129,6 +360,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
         selectedNodeId?: string | null
         selectedNodeIds?: string[]
         endpointPositions?: Partial<Record<WorkflowEndpoint, WorkflowEndpointPosition>>
+        revision?: number
+        workflowId?: number | null
       }
       const validNodeIds = new Set((parsed.nodes ?? []).map((node) => node.id))
       nodes.value = Array.isArray(parsed.nodes) ? parsed.nodes : []
@@ -146,18 +379,22 @@ export const useWorkflowStore = defineStore('workflow', () => {
             )
         : []
       endpointPositions.value = parsed.endpointPositions ?? { input: { x: 36, y: 280 } }
+      revision.value = parsed.revision ?? 0
+      workflowId.value = parsed.workflowId ?? null
       selectedNodeIds.value = Array.isArray(parsed.selectedNodeIds)
         ? parsed.selectedNodeIds.filter((id) => validNodeIds.has(id))
         : parsed.selectedNodeId && validNodeIds.has(parsed.selectedNodeId)
           ? [parsed.selectedNodeId]
           : []
       selectedNodeId.value = selectedNodeIds.value[selectedNodeIds.value.length - 1] ?? null
+      void refreshFromServer(projectId)
     } catch {
       nodes.value = []
       edges.value = []
       endpointPositions.value = { input: { x: 36, y: 280 } }
       selectedNodeId.value = null
       selectedNodeIds.value = []
+      void refreshFromServer(projectId)
     }
   }
 
@@ -189,10 +426,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   function syncWithTools(tools: CreativeToolInstance[]) {
     const validIds = new Set(tools.map((tool) => tool.id))
+    // 后端/AI 管理的节点（带 capabilityId）即使没有对应的左侧 Block 实例也保留
     const validNodeIds = new Set(
-      nodes.value.filter((node) => validIds.has(node.toolId)).map((node) => node.id),
+      nodes.value
+        .filter((node) => validIds.has(node.toolId) || node.capabilityId)
+        .map((node) => node.id),
     )
-    nodes.value = nodes.value.filter((node) => validIds.has(node.toolId))
+    nodes.value = nodes.value.filter((node) => validIds.has(node.toolId) || node.capabilityId)
     edges.value = edges.value.filter(
       (edge) =>
         (edge.source === WORKFLOW_INPUT_ID ||
@@ -232,14 +472,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
       selectedNodeIds.value = [id]
     }
     selectedNodeId.value = selectedNodeIds.value[selectedNodeIds.value.length - 1] ?? null
-    persist()
   }
 
   function selectNodes(ids: string[]) {
     const validIds = new Set(nodes.value.map((node) => node.id))
     selectedNodeIds.value = ids.filter((id) => validIds.has(id))
     selectedNodeId.value = selectedNodeIds.value[selectedNodeIds.value.length - 1] ?? null
-    persist()
   }
 
   function moveNode(id: string, x: number, y: number) {
@@ -405,6 +643,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
     offset,
     canUndo,
     canRedo,
+    revision,
+    workflowId,
+    isApplyingRemote,
     nodeWidth: 236,
     nodeHeight: 116,
     loadForProject,
@@ -431,5 +672,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
     resetView,
     setView,
     panBy,
+    buildDraftPayload,
+    applyWorkflowSnapshot,
+    refreshFromServer,
+    saveDraftToServer,
+    runCurrentWorkflow,
   }
 })
