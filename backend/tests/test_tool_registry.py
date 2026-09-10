@@ -14,11 +14,13 @@ def test_all_tools_discovered():
         "search_web",
         "generate_lyrics_block",
         "configure_lyrics_workflow",
+        "configure_image_workflow",
         "run_current_workflow",
     }
     assert registry.capability_map == {
         "generate_lyrics_block": "lyrics.generate",
         "configure_lyrics_workflow": "workflow.control",
+        "configure_image_workflow": "workflow.control",
         "run_current_workflow": "workflow.control",
     }
 

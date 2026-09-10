@@ -26,8 +26,22 @@ def test_assistant_schema_hides_direct_capability_but_keeps_workflow_tools():
     assert {"configure_lyrics_workflow", "run_current_workflow"} <= names
 
 
+def _mock_lyrics_executor(runtime_module, monkeypatch, executor):
+    entry = runtime_module.CAPABILITY_REGISTRY["lyrics.generate"]
+    monkeypatch.setitem(
+        runtime_module.CAPABILITY_REGISTRY,
+        "lyrics.generate",
+        type(entry)(
+            capability_id=entry.capability_id,
+            display_name=entry.display_name,
+            input_model=entry.input_model,
+            executor=executor,
+        ),
+    )
+
+
 def test_runtime_returns_success_from_mocked_zhipu(monkeypatch):
-    monkeypatch.setattr(runtime, "generate_lyrics_text", lambda inputs: f"# {inputs.theme}")
+    _mock_lyrics_executor(runtime, monkeypatch, lambda inputs: f"# {inputs.theme}")
     result = run(
         runtime.run_capability(
             "lyrics.generate",
@@ -44,7 +58,7 @@ def test_runtime_hides_provider_error(monkeypatch):
     def fail(_inputs):
         raise RuntimeError("provider secret should not leave runtime")
 
-    monkeypatch.setattr(runtime, "generate_lyrics_text", fail)
+    _mock_lyrics_executor(runtime, monkeypatch, fail)
     result = run(
         runtime.run_capability(
             "lyrics.generate",

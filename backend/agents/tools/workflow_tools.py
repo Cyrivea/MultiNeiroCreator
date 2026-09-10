@@ -9,9 +9,18 @@ import json
 
 from langchain_core.tools import tool
 
-from schemas.capability import LyricsGenerateInput, LyricsLanguage, LyricsMood, LyricsStyle
+from schemas.capability import (
+    ImageGenerateInput,
+    ImagePalette,
+    ImageRatio,
+    ImageStyle,
+    LyricsGenerateInput,
+    LyricsLanguage,
+    LyricsMood,
+    LyricsStyle,
+)
 from services.capabilities import current_capability_context
-from services.workflow_service import configure_lyrics, run_lyrics_workflow
+from services.workflow_service import configure_image, configure_lyrics, run_workflow
 
 # 模块级标记：工具注册器据此把这两个工具归入 Capability 路由（ainvoke 异步执行）。
 CAPABILITY_ID = "workflow.control"
@@ -52,17 +61,47 @@ def configure_lyrics_workflow(
 
 
 @tool
+def configure_image_workflow(
+    prompt: str,
+    style: ImageStyle = "电影概念艺术",
+    ratio: ImageRatio = "16:9",
+    palette: ImagePalette = "深蓝与紫色",
+) -> str:
+    """在当前工作区创建或配置图像生成节点，并自动连接输入和输出。
+
+    Args:
+        prompt: 画面描述，长度不能超过 300 个字符。
+        style: 视觉风格，只能选择平台支持的风格。
+        ratio: 画面比例，只能选择 16:9/1:1/9:16/4:3。
+        palette: 色彩方向，只能选择平台支持的配色。
+    """
+    execution = current_capability_context()
+    inputs = ImageGenerateInput(prompt=prompt, style=style, ratio=ratio, palette=palette)
+    configured = configure_image(execution.user_id, execution.project_id, inputs.model_dump())
+    return _json(
+        {
+            "status": "configured",
+            "workflow_id": configured["id"],
+            "revision": configured["revision"],
+            "node_id": configured["node_id"],
+            "message": "已在工作区创建并配置图像生成节点。图像模型尚未配置时可先搭建流程。",
+            "_ui_events": [{"type": "workflow_snapshot", "snapshot": configured["draft"]}],
+        }
+    )
+
+
+@tool
 async def run_current_workflow() -> str:
     """运行当前工作区 Workflow，并把节点的状态和结果写回画布。"""
     execution = current_capability_context()
-    result = await run_lyrics_workflow(execution.user_id, execution.project_id)
+    result = await run_workflow(execution.user_id, execution.project_id)
     return _json(
         {
-            "status": result["result"].status,
+            "status": result["status"],
             "run_id": result["run_id"],
             "revision": result["revision"],
-            "message": "当前 Workflow 已执行，结果已写入歌词节点。",
-            "error": result["result"].error,
+            "message": "当前 Workflow 已执行，各节点状态与结果已写回画布。",
+            "error": result["error"],
             "_ui_events": [
                 {"type": "workflow_snapshot", "snapshot": result["running_draft"]},
                 {"type": "workflow_snapshot", "snapshot": result["draft"]},

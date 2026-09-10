@@ -17,6 +17,7 @@ from services.workflow_service import (
     OUTPUT_ID,
     configure_lyrics,
     run_lyrics_workflow,
+    run_workflow,
     save_draft,
 )
 
@@ -113,7 +114,7 @@ def test_run_workflow_surfaces_model_unavailable(memory_repo, monkeypatch):
     monkeypatch.setattr(workflow_service, "run_capability", fake_capability)
     result = run(run_lyrics_workflow(1, None))
 
-    assert result["result"].status == "model_unavailable"
+    assert result["status"] == "model_unavailable"
     node = next(n for n in result["draft"]["nodes"] if n.get("capability_id"))
     assert node["runStatus"] == "model_unavailable"
 
@@ -133,3 +134,52 @@ def test_save_draft_rejects_invalid_edges(memory_repo):
 
     with pytest.raises(AppError):
         save_draft(1, None, bad, expected_revision=current["revision"])
+
+
+# ---------- 图像节点：API 不装也能搭建 Workflow，运行时如实上报模型未配置 ----------
+
+
+def test_configure_image_creates_node(memory_repo):
+    result = workflow_service.configure_image(
+        1,
+        None,
+        {"prompt": "雨夜小店", "style": "电影概念艺术", "ratio": "16:9", "palette": "深蓝与紫色"},
+    )
+    nodes = {n["id"]: n for n in result["draft"]["nodes"]}
+    image_node_id = result["node_id"]
+
+    assert nodes[image_node_id]["capability_id"] == "image.generate"
+    assert nodes[image_node_id]["type"] == "image"
+    assert nodes[image_node_id]["params"]["prompt"] == "雨夜小店"
+    edges = {(e["source"], e["target"]) for e in result["draft"]["edges"]}
+    assert (INPUT_ID, image_node_id) in edges
+    assert (image_node_id, OUTPUT_ID) in edges
+
+
+def test_image_run_reports_model_not_configured(memory_repo):
+    workflow_service.configure_image(1, None, {"prompt": "雨夜小店"})
+    result = run(run_workflow(1, None))
+
+    assert result["status"] == "model_unavailable"
+    node = next(n for n in result["draft"]["nodes"] if n.get("capability_id") == "image.generate")
+    assert node["runStatus"] == "model_unavailable"
+    assert "尚未配置" in (node["error"] or "")
+
+
+def test_workflow_rejects_unconfigured_capability(memory_repo):
+    current = workflow_service.get_draft(1, None)
+    draft = copy.deepcopy(current["draft"])
+    draft["nodes"].append(
+        {
+            "id": "n-ghost",
+            "kind": "tool",
+            "capability_id": "video.generate",
+            "name": "视频生成",
+        }
+    )
+    draft["edges"].append({"source": INPUT_ID, "target": "n-ghost"})
+    save_draft(1, None, draft, expected_revision=0)
+
+    with pytest.raises(AppError) as exc:
+        run(run_workflow(1, None))
+    assert "未注册的能力" in exc.value.detail

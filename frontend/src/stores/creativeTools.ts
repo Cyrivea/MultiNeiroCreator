@@ -56,7 +56,7 @@ export const creativeToolCatalog: CreativeToolCatalogItem[] = [
     color: '#d0d0d0',
     inputHint: '画面描述、风格、比例',
     defaults: {
-      prompt: '雨夜霓虹下的音乐工作室，电影感构图',
+      prompt: '',
       style: '电影概念艺术',
       ratio: '16:9',
       palette: '深蓝与紫色',

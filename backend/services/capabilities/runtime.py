@@ -1,4 +1,8 @@
-"""Capability Runtime：统一承接用户直接运行、Assistant 和未来 Workflow。"""
+"""Capability Runtime：统一承接用户直接运行、Assistant 和未来 Workflow。
+
+能力清单收在一张注册表里：每条 entry 给出输入 Schema、执行器和对外展示名。
+新增 Block = 在 ``CAPABILITY_REGISTRY`` 里追加一条，路由/工具/日志都复用。
+"""
 
 from __future__ import annotations
 
@@ -6,14 +10,14 @@ import asyncio
 import contextlib
 import contextvars
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from schemas.capability import CapabilityResult, LyricsGenerateInput
-from services.capabilities.zhipu_text import ModelNotConfiguredError, generate_lyrics_text
+from schemas.capability import CapabilityResult
+from services.capabilities.zhipu_text import ModelNotConfiguredError
 
 logger = logging.getLogger("capabilities")
 
@@ -23,6 +27,14 @@ class CapabilityContext:
     user_id: int
     project_id: int | None
     source: str
+
+
+@dataclass(frozen=True)
+class CapabilityEntry:
+    capability_id: str
+    display_name: str
+    input_model: type[BaseModel]
+    executor: Callable[[BaseModel], str]
 
 
 _capability_context: contextvars.ContextVar[CapabilityContext | None] = contextvars.ContextVar(
@@ -44,6 +56,41 @@ def use_capability_context(context: CapabilityContext) -> Iterator[None]:
         _capability_context.reset(token)
 
 
+def _lyrics_executor(inputs: BaseModel) -> str:
+    from schemas.capability import LyricsGenerateInput
+    from services.capabilities.zhipu_text import generate_lyrics_text
+
+    assert isinstance(inputs, LyricsGenerateInput)
+    return generate_lyrics_text(inputs)
+
+
+def _image_executor(_inputs: BaseModel) -> str:
+    """图像能力暂未接 Provider；返回模型未配置态而不是伪造一张图。"""
+    raise ModelNotConfiguredError("图像模型尚未配置")
+
+
+def _register() -> dict[str, CapabilityEntry]:
+    from schemas.capability import ImageGenerateInput, LyricsGenerateInput
+
+    return {
+        "lyrics.generate": CapabilityEntry(
+            capability_id="lyrics.generate",
+            display_name="歌词",
+            input_model=LyricsGenerateInput,
+            executor=_lyrics_executor,
+        ),
+        "image.generate": CapabilityEntry(
+            capability_id="image.generate",
+            display_name="图像",
+            input_model=ImageGenerateInput,
+            executor=_image_executor,
+        ),
+    }
+
+
+CAPABILITY_REGISTRY: dict[str, CapabilityEntry] = _register()
+
+
 async def run_capability(
     capability_id: str,
     inputs: dict[str, Any],
@@ -51,16 +98,17 @@ async def run_capability(
     context: CapabilityContext,
 ) -> CapabilityResult:
     """执行一个受控生产能力，Provider 细节不向调用入口泄露。"""
-    if capability_id != "lyrics.generate":
+    entry = CAPABILITY_REGISTRY.get(capability_id)
+    if entry is None:
         return CapabilityResult(capability_id=capability_id, status="failed", error="不支持的生产能力")
 
     try:
-        validated = LyricsGenerateInput.model_validate(inputs)
+        validated = entry.input_model.model_validate(inputs)
     except ValidationError:
         return CapabilityResult(
             capability_id=capability_id,
             status="failed",
-            error="歌词参数不符合平台要求",
+            error=f"{entry.display_name}参数不符合平台要求",
         )
 
     logger.info(
@@ -74,7 +122,7 @@ async def run_capability(
         },
     )
     try:
-        content = await asyncio.to_thread(generate_lyrics_text, validated)
+        content = await asyncio.to_thread(entry.executor, validated)
     except ModelNotConfiguredError:
         logger.warning(
             "能力模型未配置",
@@ -87,7 +135,7 @@ async def run_capability(
         return CapabilityResult(
             capability_id=capability_id,
             status="model_unavailable",
-            error="歌词模型尚未配置，请稍后再试",
+            error=f"{entry.display_name}模型尚未配置，请稍后再试",
         )
     except Exception as exc:
         logger.exception(
@@ -102,7 +150,7 @@ async def run_capability(
         return CapabilityResult(
             capability_id=capability_id,
             status="failed",
-            error="歌词生成失败，请稍后重试",
+            error=f"{entry.display_name}生成失败，请稍后重试",
         )
 
     logger.info(

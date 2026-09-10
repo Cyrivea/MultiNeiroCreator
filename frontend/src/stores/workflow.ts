@@ -85,6 +85,7 @@ function positionForIndex(index: number) {
 
 const CAPABILITY_TO_TOOL_TYPE: Record<string, CreativeToolType> = {
   'lyrics.generate': 'lyrics',
+  'image.generate': 'image',
 }
 
 const TOOL_TYPE_TO_CAPABILITY: Record<CreativeToolType, string> = {

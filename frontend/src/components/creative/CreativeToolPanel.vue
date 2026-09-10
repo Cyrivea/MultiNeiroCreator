@@ -124,6 +124,7 @@
               <textarea
                 :value="tool.params.theme"
                 rows="3"
+                placeholder="输入创作主题，例如：漫步在夏夜的城市街头"
                 @input="update('theme', $event)"
               ></textarea>
             </label>
@@ -164,6 +165,7 @@
               <textarea
                 :value="tool.params.prompt"
                 rows="4"
+                placeholder="输入画面描述，例如：雨夜霓虹下挂着工作灯的小店"
                 @input="update('prompt', $event)"
               ></textarea>
             </label>
@@ -189,7 +191,13 @@
             </div>
             <label class="creative-field">
               <span>色彩方向</span>
-              <input :value="tool.params.palette" @input="update('palette', $event)" />
+              <select :value="tool.params.palette" @change="update('palette', $event)">
+                <option>深蓝与紫色</option>
+                <option>黑白</option>
+                <option>暖金</option>
+                <option>低饱和绿色</option>
+                <option>高对比彩色</option>
+              </select>
             </label>
           </template>
 
@@ -266,7 +274,7 @@
           </template>
 
           <div
-            v-if="tool.type === 'lyrics' && toolRun?.status === 'succeeded'"
+            v-if="runnableTool && toolRun?.status === 'succeeded' && tool.type === 'lyrics'"
             class="creative-generation-result"
           >
             <div class="creative-generation-result-head">
@@ -276,10 +284,10 @@
             <pre>{{ toolRun.content }}</pre>
           </div>
           <div
-            v-else-if="tool.type === 'lyrics' && toolRun && toolRun.status !== 'running'"
+            v-else-if="runnableTool && toolRun && toolRun.status !== 'running'"
             class="creative-generation-error"
           >
-            {{ toolRun.error ?? '歌词生成失败，请稍后重试' }}
+            {{ toolRun.error ?? generationFailureText }}
           </div>
         </div>
 
@@ -290,13 +298,13 @@
               保存参数
             </button>
             <button
-              v-if="tool.type === 'lyrics'"
+              v-if="runnableTool"
               type="button"
               class="creative-tool-save"
-              :disabled="isLyricsGenerating"
-              @click="generateLyrics"
+              :disabled="isGenerating"
+              @click="generateBlock"
             >
-              {{ isLyricsGenerating ? '生成中…' : '生成歌词' }}
+              {{ isGenerating ? '生成中…' : generateButtonText }}
             </button>
             <button v-else type="button" class="creative-tool-save" @click="saveAndClose">
               确定
@@ -322,7 +330,12 @@ const toolRunsStore = useToolRunsStore()
 const tool = computed(() => creativeToolsStore.activePanelTool)
 const references = computed(() => tool.value?.references ?? [])
 const toolRun = computed(() => (tool.value ? (toolRunsStore.records[tool.value.id] ?? null) : null))
-const isLyricsGenerating = computed(() => toolRun.value?.status === 'running')
+const runnableTool = computed(() => tool.value?.type === 'lyrics' || tool.value?.type === 'image')
+const isGenerating = computed(() => toolRun.value?.status === 'running')
+const generateButtonText = computed(() => (tool.value?.type === 'image' ? '生成图片' : '生成歌词'))
+const generationFailureText = computed(() =>
+  tool.value?.type === 'image' ? '图像模型尚未配置，请稍后再试' : '歌词生成失败，请稍后重试',
+)
 const mainInputSource = computed(() => {
   const nodeId = tool.value
     ? (workflowStore.nodes.find((candidate) => candidate.toolId === tool.value!.id)?.id ?? null)
@@ -399,13 +412,14 @@ function removeReference(referenceId: string) {
   if (tool.value) creativeToolsStore.removeReference(tool.value.id, referenceId)
 }
 
-async function generateLyrics() {
+async function generateBlock() {
   const currentTool = tool.value
-  if (!currentTool || currentTool.type !== 'lyrics' || isLyricsGenerating.value) return
+  if (!currentTool || !runnableTool.value || isGenerating.value) return
 
-  const theme = currentTool.params.theme?.trim()
-  if (!theme) {
-    ElMessage.warning('请先填写创作主题')
+  const requiredText =
+    currentTool.type === 'lyrics' ? currentTool.params.theme : currentTool.params.prompt
+  if (!requiredText?.trim()) {
+    ElMessage.warning(currentTool.type === 'image' ? '请先填写画面描述' : '请先填写创作主题')
     return
   }
 
@@ -415,17 +429,17 @@ async function generateLyrics() {
     const status = await workflowStore.runCurrentWorkflow()
     const record = toolRunsStore.records[currentTool.id]
     if (status === 'succeeded') {
-      ElMessage.success('歌词生成完成')
+      ElMessage.success(currentTool.type === 'image' ? '图像生成完成' : '歌词生成完成')
     } else {
-      ElMessage.error(record?.error ?? '歌词生成失败，请稍后重试')
+      ElMessage.error(record?.error ?? generationFailureText.value)
     }
   } catch {
     toolRunsStore.setRecord(currentTool.id, {
       status: 'failed',
       content: null,
-      error: '歌词生成请求失败，请稍后重试',
+      error: '生成请求失败，请稍后重试',
     })
-    ElMessage.error('歌词生成请求失败，请稍后重试')
+    ElMessage.error('生成请求失败，请稍后重试')
   }
 }
 
