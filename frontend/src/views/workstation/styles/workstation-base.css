@@ -26,11 +26,7 @@
   filter: grayscale(1);
   background: var(--body-bg);
   color: var(--text-primary);
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
+  font-family: var(--font-ui);
   font-size: 16px;
   font-weight: 400;
   line-height: 1.5;
@@ -69,6 +65,7 @@
 .workstation-layout .modal-title,
 .workstation-layout .message-title {
   font-weight: 600;
+  letter-spacing: -0.015em;
 }
 
 .workstation-layout .window-controls {

@@ -1,7 +1,7 @@
 [project]
-name = "multineirocreator-backend"
+name = "neyria-backend"
 version = "0.1.0"
-description = "MultiNeiroCreator 后端：FastAPI + SSE 流式对话 + RAG + Agent 工具"
+description = "Neyria 后端：FastAPI + SSE 流式对话 + RAG + Agent 工具"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.141",

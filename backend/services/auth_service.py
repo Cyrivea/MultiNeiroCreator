@@ -62,7 +62,7 @@ async def send_code(username: str) -> dict:
     msg = MIMEText(
         f"""
     <div style="font-family:sans-serif;padding:20px;">
-        <h2>MultiNeiroCreator 验证码</h2>
+        <h2>Neyria 验证码</h2>
         <p>您的验证码为：</p>
         <h1 style="color:#8b5cf6;letter-spacing:8px">{code}</h1>
         <p style="color:#999">验证码5分钟内有效，请勿泄露给他人。</p>
@@ -71,7 +71,7 @@ async def send_code(username: str) -> dict:
         "html",
         "utf-8",
     )
-    msg["Subject"] = "MultiNeiroCreator 注册验证码"
+    msg["Subject"] = "Neyria 注册验证码"
     msg["From"] = MAIL_USER
     msg["To"] = username
 

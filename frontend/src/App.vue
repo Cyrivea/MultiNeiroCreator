@@ -30,30 +30,34 @@ const showParticleBackground = computed(() => route.path === '/home' || route.pa
 }
 
 .page-enter-active {
-  animation: fadeIn 0.5s ease;
+  animation: fadeIn 0.55s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .page-leave-active {
-  animation: fadeOut 0.4s ease;
+  animation: fadeOut 0.38s cubic-bezier(0.4, 0, 1, 1);
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(10px);
+    filter: blur(8px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0);
   }
 }
 @keyframes fadeOut {
   from {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0);
   }
   to {
     opacity: 0;
-    transform: translateY(-8px);
+    transform: translateY(-10px);
+    filter: blur(6px);
   }
 }
 </style>

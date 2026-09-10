@@ -5,7 +5,7 @@
         <header class="topbar">
           <div class="topbar-left">
             <div class="title-row">
-              <div class="app-title">MultiNeiroCreator</div>
+              <div class="app-title">Neyria</div>
             </div>
           </div>
 
@@ -597,6 +597,11 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.app-title {
+  letter-spacing: -0.04em;
+  font-weight: 650;
+}
+
 .topbar-left {
   gap: 0;
 }
@@ -902,6 +907,15 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   color: #777;
   font-size: 14px;
+  transition:
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 180ms ease;
+}
+
+.creative-tool-block:hover .creative-tool-block-arrow,
+.creative-tool-block.is-selected .creative-tool-block-arrow {
+  transform: translateX(3px);
+  color: #e6e6e6;
 }
 
 .creative-tool-block-remove {
@@ -1067,7 +1081,8 @@ onBeforeUnmount(() => {
 }
 
 .assistant-reveal-button:hover {
-  background: #3b82f6 !important;
+  background: rgba(255, 255, 255, 0.16) !important;
+  border-color: rgba(255, 255, 255, 0.32) !important;
 }
 
 @media (max-width: 1180px) {

@@ -1,3 +1,51 @@
+/* ---------------- 自托管字体（避免运行时依赖外部 CDN） ---------------- */
+
+/* Manrope：可变字重 200–800，主体界面字体（纤细几何感，拉丁/数字/标点） */
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/fonts/manrope-var.woff2') format('woff2');
+}
+
+/* Instrument Serif：编辑感衬线，仅作标题/引用点缀（regular + italic） */
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/instrument-serif-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/instrument-serif-400i.woff2') format('woff2');
+}
+
+:root {
+  color-scheme: dark;
+
+  /* 字体栈：拉丁走 Manrope，中文回退到系统细体 */
+  --font-ui:
+    'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  --font-serif: 'Instrument Serif', 'Songti SC', 'Noto Serif SC', 'SimSun', serif;
+
+  /* 统一缓动 */
+  --ease-glide: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* 点缀色（仅用于文字/细线，不做色块） */
+  --accent-mist: rgba(164, 182, 222, 0.72);
+  --accent-mist-strong: #9fb6de;
+  --accent-mauve: #c7addd;
+  --accent-sage: #a8ccb5;
+  --accent-sand: #dcc398;
+}
+
 *,
 *::before,
 *::after {
@@ -13,16 +61,14 @@ body {
   overflow-x: hidden;
   background: #040405;
   color: #f4f4f4;
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
+  font-family: var(--font-ui);
+  font-weight: 420;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
 }
 
 #app {
@@ -30,9 +76,38 @@ body {
   min-height: 100vh;
 }
 
-:root {
-  color-scheme: dark;
+/* ---------------- 全局细节：选区 / 焦点 / 滚动条 ---------------- */
+
+::selection {
+  background: rgba(164, 182, 222, 0.26);
+  color: #f6f8fc;
 }
+
+:focus-visible {
+  outline: 1px solid rgba(244, 244, 244, 0.42);
+  outline-offset: 3px;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* ---------------- 通用动效原语 ---------------- */
 
 @keyframes ripple-wave {
   0% {
@@ -44,5 +119,26 @@ body {
     width: var(--r);
     height: var(--r);
     opacity: 0;
+  }
+}
+
+/* v-reveal 滚动显现：进入视口前保持不可见，命中后做一次上浮显现（错峰值 --i） */
+.reveal-item {
+  opacity: 0;
+}
+.reveal-item.is-revealed {
+  animation: ux-reveal-up 0.72s var(--ease-glide) both;
+  animation-delay: calc(var(--i, 0) * 90ms);
+}
+@keyframes ux-reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
   }
 }

@@ -2,7 +2,7 @@
   <div class="home-shell">
     <header class="home-nav" :class="{ scrolled: isScrolled }">
       <div class="shell-frame nav-frame">
-        <router-link to="/home" class="nav-brand">MultiNeiroCreator</router-link>
+        <router-link to="/home" class="nav-brand">Neyria</router-link>
 
         <nav class="nav-desktop">
           <a href="#features">Capabilities</a>
@@ -57,8 +57,8 @@
               for AI-native music.
             </h1>
             <p class="hero-description">
-              MultiNeiroCreator combines composition, lyrics, visual generation, PV workflow, and
-              assistant orchestration inside one continuous surface instead of scattered tools.
+              Neyria combines composition, lyrics, visual generation, PV workflow, and assistant
+              orchestration inside one continuous surface instead of scattered tools.
             </p>
 
             <div class="hero-actions">
@@ -90,7 +90,7 @@
 
       <section id="features" class="content-section">
         <div class="shell-frame section-frame">
-          <div class="section-intro">
+          <div v-reveal class="section-intro">
             <div class="section-kicker">Capabilities</div>
             <h2 class="section-title">One surface for modular creation.</h2>
             <p class="section-copy">
@@ -101,7 +101,13 @@
           </div>
 
           <div class="feature-grid">
-            <article v-for="feature in features" :key="feature.title" class="feature-card">
+            <article
+              v-for="(feature, index) in features"
+              :key="feature.title"
+              v-reveal
+              class="feature-card"
+              :style="{ '--i': index }"
+            >
               <div class="feature-index">{{ feature.index }}</div>
               <h3>{{ feature.title }}</h3>
               <p>{{ feature.desc }}</p>
@@ -115,7 +121,7 @@
 
       <section id="workflow" class="content-section workflow-section">
         <div class="shell-frame workflow-frame">
-          <div class="section-intro section-intro--split">
+          <div v-reveal class="section-intro section-intro--split">
             <div>
               <div class="section-kicker">Workflow</div>
               <h2 class="section-title">
@@ -130,7 +136,13 @@
           </div>
 
           <div class="workflow-rail">
-            <div v-for="step in workflowSteps" :key="step.title" class="workflow-step">
+            <div
+              v-for="(step, index) in workflowSteps"
+              :key="step.title"
+              v-reveal
+              class="workflow-step"
+              :style="{ '--i': index }"
+            >
               <div class="workflow-step-number">{{ step.number }}</div>
               <div class="workflow-step-title">{{ step.title }}</div>
               <div class="workflow-step-copy">{{ step.copy }}</div>
@@ -141,7 +153,7 @@
 
       <section id="about" class="content-section about-section">
         <div class="shell-frame about-frame">
-          <div class="about-panel">
+          <div v-reveal class="about-panel">
             <div class="section-kicker">Design Direction</div>
             <h2 class="section-title">Full-screen, calmer motion, stronger depth.</h2>
             <p class="section-copy">
@@ -151,21 +163,21 @@
           </div>
 
           <div class="about-list">
-            <div class="about-item">
+            <div v-reveal class="about-item">
               <div class="about-item-title">Fill</div>
               <div class="about-item-copy">
                 Hero and major sections now occupy the browser as a stage instead of a centered
                 card.
               </div>
             </div>
-            <div class="about-item">
+            <div v-reveal class="about-item" :style="{ '--i': 1 }">
               <div class="about-item-title">Motion</div>
               <div class="about-item-copy">
                 Buttons and panels use restrained lift and contrast changes instead of noisy glow
                 effects.
               </div>
             </div>
-            <div class="about-item">
+            <div v-reveal class="about-item" :style="{ '--i': 2 }">
               <div class="about-item-title">Depth</div>
               <div class="about-item-copy">
                 Background animation stays behind a stable content layer so the page feels alive
@@ -178,8 +190,8 @@
     </main>
 
     <footer class="home-footer">
-      <div class="shell-frame footer-frame">
-        <div class="footer-brand">MultiNeiroCreator</div>
+      <div v-reveal class="shell-frame footer-frame">
+        <div class="footer-brand">Neyria</div>
         <div class="footer-copy">
           AI native workstation for music, visuals, and agent-driven creation.
         </div>
@@ -364,6 +376,28 @@ onUnmounted(() => {
     transform 180ms ease;
 }
 
+.nav-desktop a {
+  position: relative;
+}
+
+.nav-desktop a::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -5px;
+  width: 100%;
+  height: 1px;
+  background: rgba(244, 244, 244, 0.72);
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: transform 0.38s var(--ease-glide);
+}
+
+.nav-desktop a:hover::after {
+  transform: scaleX(1);
+  transform-origin: left center;
+}
+
 .nav-desktop a:hover,
 .nav-link-button:hover {
   color: #ffffff;
@@ -387,6 +421,8 @@ onUnmounted(() => {
 
 .hero-primary,
 .footer-button {
+  position: relative;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -405,6 +441,28 @@ onUnmounted(() => {
     transform 200ms ease,
     background-color 200ms ease,
     border-color 200ms ease;
+}
+
+/* 悬停高光扫过（逆时针一次性的细腻扫光，无色块感） */
+.hero-primary::after,
+.footer-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 32%,
+    rgba(255, 255, 255, 0.65) 50%,
+    transparent 68%
+  );
+  transform: translateX(-130%);
+}
+
+.hero-primary:hover::after,
+.footer-button:hover::after {
+  transform: translateX(130%);
+  transition: transform 0.7s var(--ease-soft);
 }
 
 .nav-primary-button:hover,
@@ -515,27 +573,34 @@ onUnmounted(() => {
   padding: 0;
   border: none;
   border-radius: 0;
-  color: rgba(244, 244, 244, 0.48);
+  color: var(--accent-mist);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.24em;
   text-transform: uppercase;
   background: transparent;
 }
 
 .hero-title {
   margin-top: 18px;
-  max-width: 7.2ch;
+  max-width: 9.5ch;
   font-size: clamp(72px, 9vw, 112px);
   line-height: 0.9;
   letter-spacing: -0.085em;
-  font-weight: 700;
+  font-weight: 600;
   color: #fafafa;
 }
 
+/* 关键单词用衬线斜体做编辑感点缀（仅一字，不成色块） */
 .hero-title span {
   display: block;
-  color: #d6d6d6;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.04em;
+  letter-spacing: -0.015em;
+  color: #e9e9ea;
+  padding-bottom: 0.06em;
 }
 
 .hero-description,
@@ -603,6 +668,61 @@ onUnmounted(() => {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.24em;
+}
+
+/* 英雄区入场：文案错峰上浮 + 轻微去模糊；侧栏稍晚入场 */
+.hero-eyebrow,
+.hero-title,
+.hero-description,
+.hero-actions,
+.hero-bottom-note,
+.hero-side-panel {
+  animation: hero-rise 0.95s var(--ease-glide) both;
+}
+.hero-eyebrow {
+  animation-delay: 80ms;
+}
+.hero-title {
+  animation-delay: 160ms;
+}
+.hero-description {
+  animation-delay: 280ms;
+}
+.hero-actions {
+  animation-delay: 380ms;
+}
+.hero-side-panel {
+  animation-delay: 320ms;
+}
+.hero-bottom-note {
+  animation:
+    hero-rise 0.95s var(--ease-glide) 500ms both,
+    hero-note-float 2.8s ease-in-out 1.6s infinite;
+}
+
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes hero-note-float {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translateY(4px);
+    opacity: 1;
+  }
 }
 
 .hero-stage {
@@ -722,6 +842,27 @@ onUnmounted(() => {
   color: rgba(255, 255, 255, 0.42);
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  transition: color 220ms ease;
+}
+
+/* 功能序号用低饱和点缀色（仅文字，不做色块） */
+.feature-card:nth-child(1) .feature-index {
+  color: var(--accent-mist-strong);
+}
+.feature-card:nth-child(2) .feature-index {
+  color: var(--accent-mauve);
+}
+.feature-card:nth-child(3) .feature-index {
+  color: var(--accent-sage);
+}
+.feature-card:nth-child(4) .feature-index {
+  color: var(--accent-sand);
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.16);
+  background-color: rgba(255, 255, 255, 0.045);
 }
 
 .feature-card h3 {
@@ -729,6 +870,7 @@ onUnmounted(() => {
   font-size: 24px;
   line-height: 1.08;
   letter-spacing: -0.045em;
+  font-weight: 600;
   color: #f7f7f7;
 }
 
@@ -784,6 +926,23 @@ onUnmounted(() => {
   color: rgba(255, 255, 255, 0.44);
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  transition: color 220ms ease;
+}
+
+.workflow-step:nth-child(1) .workflow-step-number {
+  color: var(--accent-mist-strong);
+}
+.workflow-step:nth-child(2) .workflow-step-number {
+  color: var(--accent-mauve);
+}
+.workflow-step:nth-child(3) .workflow-step-number {
+  color: var(--accent-sage);
+}
+
+.workflow-step:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.16);
+  background-color: rgba(255, 255, 255, 0.045);
 }
 
 .workflow-step-title {
@@ -839,6 +998,12 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
+.about-item:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.15);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
 .about-item-copy {
   margin-top: 14px;
   font-size: 15px;
@@ -862,9 +1027,10 @@ onUnmounted(() => {
 
 .footer-brand {
   color: #f6f6f6;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  font-family: var(--font-serif);
+  font-size: 19px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
 }
 
 .footer-copy {

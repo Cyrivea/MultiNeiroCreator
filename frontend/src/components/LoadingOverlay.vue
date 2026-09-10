@@ -28,8 +28,8 @@
         </div>
 
         <div class="brand">
-          <div class="brand-mark">MNC</div>
-          <div class="brand-name">MultiNeiroCreator</div>
+          <div class="brand-mark">NEYRIA</div>
+          <div class="brand-name">AI CREATIVE WORKSTATION</div>
         </div>
 
         <div class="status-line">
@@ -168,12 +168,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   background: var(--bg);
   color: var(--fg);
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
+  font-family: var(--font-ui);
   will-change: opacity, filter, transform;
 }
 
@@ -288,7 +283,7 @@ onBeforeUnmount(() => {
 }
 .brand-mark {
   font-size: clamp(22px, 4.8vw, 28px);
-  font-weight: 500;
+  font-weight: 400;
   letter-spacing: 0.32em;
   color: var(--fg);
 }

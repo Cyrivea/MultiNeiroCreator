@@ -7,7 +7,7 @@
 
     <div class="login-card">
       <!-- 品牌 -->
-      <router-link to="/home" class="brand">MultiNeiroCreator</router-link>
+      <router-link to="/home" class="brand">Neyria</router-link>
 
       <!-- Tab 切换 -->
       <div class="tabs">
@@ -332,12 +332,7 @@ async function submitRegister() {
   align-items: center;
   justify-content: center;
   padding: 40px 20px;
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
+  font-family: var(--font-ui);
 }
 
 /* Toast */
@@ -390,11 +385,27 @@ async function submitRegister() {
 .login-card {
   width: 100%;
   max-width: 428px;
-  background: rgba(255, 255, 255, 0.028);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 28px;
   padding: 34px 34px 30px;
   backdrop-filter: blur(10px);
+  animation: card-in 0.72s var(--ease-glide) both;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.99);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
 }
 
 /* Brand */
@@ -451,18 +462,19 @@ async function submitRegister() {
   margin-bottom: 4px;
 }
 .head-kicker {
-  color: rgba(244, 244, 244, 0.44);
+  color: var(--accent-mist);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
 }
 .head-title {
   margin-top: 10px;
-  font-size: 34px;
+  font-family: var(--font-serif);
+  font-size: 38px;
   line-height: 1;
-  letter-spacing: -0.05em;
-  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-weight: 400;
   color: #fafafa;
 }
 
@@ -483,6 +495,10 @@ async function submitRegister() {
   color: rgba(244, 244, 244, 0.44);
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  transition: color 180ms ease;
+}
+.field:focus-within label {
+  color: rgba(244, 244, 244, 0.74);
 }
 .field input {
   width: 100%;
@@ -500,8 +516,9 @@ async function submitRegister() {
   box-sizing: border-box;
 }
 .field input:focus {
-  border-color: rgba(255, 255, 255, 0.28);
+  border-color: rgba(164, 182, 222, 0.45);
   background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 0 3px rgba(164, 182, 222, 0.1);
 }
 .field input.input-error {
   border-color: rgba(217, 140, 140, 0.6) !important;
@@ -596,12 +613,25 @@ async function submitRegister() {
   font-size: 12px;
   color: #d98c8c;
   margin-top: 1px;
+  animation: error-pop 0.28s var(--ease-soft) both;
 }
 .error-msg {
   font-size: 13px;
   color: #d98c8c;
   text-align: center;
   margin: -2px 0;
+  animation: error-pop 0.28s var(--ease-soft) both;
+}
+
+@keyframes error-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .btn-primary {
@@ -626,10 +656,31 @@ async function submitRegister() {
   position: relative;
   overflow: hidden;
 }
+.btn-primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 32%,
+    rgba(255, 255, 255, 0.65) 50%,
+    transparent 68%
+  );
+  transform: translateX(-130%);
+}
+.btn-primary:hover::after {
+  transform: translateX(130%);
+  transition: transform 0.7s var(--ease-soft);
+}
 .btn-primary:hover {
   transform: translateY(-2px);
   background: #ffffff;
   border-color: #ffffff;
+}
+.btn-primary:active:not(.loading) {
+  transform: translateY(-1px) scale(0.985);
+  transition-duration: 90ms;
 }
 .btn-primary.loading {
   opacity: 0.6;
@@ -646,10 +697,14 @@ async function submitRegister() {
 .switch-tip span {
   color: #f4f4f4;
   cursor: pointer;
-  transition: opacity 180ms ease;
+  padding-bottom: 1px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+  transition:
+    border-color 180ms ease,
+    opacity 180ms ease;
 }
 .switch-tip span:hover {
-  opacity: 0.65;
+  border-bottom-color: rgba(255, 255, 255, 0.6);
 }
 
 /* Form transition */

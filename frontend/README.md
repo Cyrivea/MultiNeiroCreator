@@ -1,4 +1,4 @@
-# MultiNeiroCreator 前端
+# Neyria 前端
 
 Vue 3 + TypeScript + Vite 的 AI 创作工作台前端，负责项目管理、本地文件夹读写、流式对话和工作流界面。
 
@@ -9,6 +9,7 @@ Vue 3 + TypeScript + Vite 的 AI 创作工作台前端，负责项目管理、�
 - 浏览器 File System Access API 本地项目保存
 - Pinia 管理项目、聊天、用户和加载状态
 - SSE 流式 AI 对话、工具调用状态和打字机效果
+- 四类创作 Block 的参数面板：歌词 Block 已接入智谱生成，图像/视频/音频暂为后端 Provider 待接的界面原型
 - 图片/文档附件预览与 Blob URL 生命周期管理
 - 前端 Vitest 测试、ESLint、Prettier 和生产构建
 
@@ -41,7 +42,7 @@ pnpm test
 pnpm build
 ```
 
-当前测试基线：**30 个 Vitest 用例通过**。构建会生成独立的 Vue、Axios、Element Plus vendor chunk；构建产物 `dist/` 不提交到 Git。
+当前测试基线：**31 个 Vitest 用例通过**。构建会生成独立的 Vue、Axios、Element Plus vendor chunk；构建产物 `dist/` 不提交到 Git。
 
 ## 目录说明
 

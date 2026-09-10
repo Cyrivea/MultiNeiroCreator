@@ -6,9 +6,9 @@
     <Transition name="intro-copy">
       <div v-if="introState === 'intro'" class="intro-copy">
         <div class="intro-kicker">AI Native Creative Workstation</div>
-        <h1 class="intro-title">MultiNeiroCreator</h1>
+        <h1 class="intro-title">N E Y R I A</h1>
         <p class="intro-description">
-          Composition, lyrics, visuals, PV workflow, and Neyria live inside one creative surface.
+          Neyria is an AI-native creative surface for composition, lyrics, visuals, and PV
         </p>
 
         <div class="intro-tip">Click anywhere to begin</div>
@@ -232,27 +232,33 @@ onUnmounted(() => {
 }
 
 .intro-kicker {
-  color: rgba(255, 255, 255, 0.48);
+  color: var(--accent-mist);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
+  animation: intro-rise 0.9s var(--ease-glide) 0.15s both;
 }
 
 .intro-title {
   margin-top: 18px;
   font-size: clamp(34px, 5vw, 62px);
   line-height: 0.96;
-  letter-spacing: -0.06em;
-  font-weight: 700;
+  letter-spacing: -0.04em;
+  font-weight: 200;
+  animation: intro-rise 1.05s var(--ease-glide) 0.3s both;
 }
 
 .intro-description {
-  margin-top: 16px;
+  margin-top: 18px;
   max-width: 560px;
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 16px;
-  line-height: 1.75;
+  color: rgba(255, 255, 255, 0.66);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 19px;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+  animation: intro-rise 0.95s var(--ease-glide) 0.45s both;
 }
 
 .intro-button {
@@ -276,6 +282,32 @@ onUnmounted(() => {
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
+  animation:
+    intro-rise 0.9s var(--ease-glide) 0.6s both,
+    intro-tip-pulse 3.2s ease-in-out 1.6s infinite;
+}
+
+@keyframes intro-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes intro-tip-pulse {
+  0%,
+  100% {
+    opacity: 0.38;
+  }
+  50% {
+    opacity: 0.85;
+  }
 }
 
 .intro-copy-enter-active,

@@ -1,6 +1,6 @@
 
 services:
-  multineirocreator:
+  neyria:
     build: .
     ports:
       - "8000:8000"
