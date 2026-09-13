@@ -36,18 +36,25 @@ def configure_lyrics_workflow(
     style: LyricsStyle = "流行抒情",
     mood: LyricsMood = "温柔、克制",
     language: LyricsLanguage = "中文",
+    upstream_node_id: str | None = None,
 ) -> str:
     """在当前工作区创建或配置歌词生成节点，并自动连接输入和输出。
+
+    当需要把当前节点接到一个已有节点后面时，把既有的上游节点 id 传给
+    upstream_node_id；不传时默认接在输入端点后面。
 
     Args:
         theme: 歌词主题，长度不能超过 200 个字符。
         style: 歌曲风格，只能选择平台支持的风格。
         mood: 歌词情绪，只能选择平台支持的情绪。
         language: 歌词语言，只能选择平台支持的语言。
+        upstream_node_id: 上游节点 ID，用于把当前节点接到已有工作流之后。
     """
     execution = current_capability_context()
     inputs = LyricsGenerateInput(theme=theme, style=style, mood=mood, language=language)
-    configured = configure_lyrics(execution.user_id, execution.project_id, inputs.model_dump())
+    configured = configure_lyrics(
+        execution.user_id, execution.project_id, inputs.model_dump(), upstream_node_id
+    )
     return _json(
         {
             "status": "configured",
@@ -66,18 +73,25 @@ def configure_image_workflow(
     style: ImageStyle = "电影概念艺术",
     ratio: ImageRatio = "16:9",
     palette: ImagePalette = "深蓝与紫色",
+    upstream_node_id: str | None = None,
 ) -> str:
     """在当前工作区创建或配置图像生成节点，并自动连接输入和输出。
+
+    当图像需要承接上一个节点的产物时，把该节点 id 传给 upstream_node_id，
+    并在 prompt 里写上 `${upstream.result.content}` 引用上一步结果。
 
     Args:
         prompt: 画面描述，长度不能超过 300 个字符。
         style: 视觉风格，只能选择平台支持的风格。
         ratio: 画面比例，只能选择 16:9/1:1/9:16/4:3。
         palette: 色彩方向，只能选择平台支持的配色。
+        upstream_node_id: 上游节点 ID，用于把当前节点接到已有工作流之后。
     """
     execution = current_capability_context()
     inputs = ImageGenerateInput(prompt=prompt, style=style, ratio=ratio, palette=palette)
-    configured = configure_image(execution.user_id, execution.project_id, inputs.model_dump())
+    configured = configure_image(
+        execution.user_id, execution.project_id, inputs.model_dump(), upstream_node_id
+    )
     return _json(
         {
             "status": "configured",

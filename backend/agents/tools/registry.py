@@ -31,7 +31,6 @@ def _discover_tools() -> tuple[dict[str, BaseTool], dict[str, str]]:
                 continue
             existing = registry.get(obj.name)
             if existing is not None and existing is not obj:
-                # 启动即失败：重名工具是配置错误，跑起来再暴露只会更难查
                 raise RuntimeError(f"工具重名冲突: {obj.name}（{mod_info.name} 与既有注册冲突）")
             registry[obj.name] = obj
             capability_id = getattr(module, "CAPABILITY_ID", None)

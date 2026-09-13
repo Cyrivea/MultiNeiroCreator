@@ -124,14 +124,54 @@ def _ensure_edge(draft: dict[str, Any], source: str, target: str) -> None:
         edges.append({"source": source, "target": target})
 
 
+def _wire_node(
+    draft: dict[str, Any],
+    node_id: str,
+    upstream_node_id: str | None = None,
+) -> None:
+    """连接一个能力节点。
+
+    - 不传 upstream：默认挂到 Input → 节点 → Output（最小独立流程）。
+    - 传了 upstream：把节点接到 upstream 之后；若原图是 upstream → Output，则
+      把链尾顺延为 节点 → Output，形成 Input → … → upstream → 节点 → Output。
+    """
+    edges = draft.setdefault("edges", [])
+    valid_sources = {INPUT_ID} | {
+        str(n.get("id")) for n in draft.get("nodes", []) if isinstance(n, dict)
+    }
+    if upstream_node_id is None:
+        _ensure_edge(draft, INPUT_ID, node_id)
+        _ensure_edge(draft, node_id, OUTPUT_ID)
+        return
+    if upstream_node_id not in valid_sources or upstream_node_id == OUTPUT_ID:
+        raise AppError("upstream 不存在或不可作为上游", status_code=422)
+
+    # 新接线前清掉现有入边，保证每个节点只有一个主输入（当前阶段的约束）
+    edges[:] = [edge for edge in edges if edge.get("target") != node_id]
+    existing_tail = next(
+        (
+            edge
+            for edge in edges
+            if edge.get("source") == upstream_node_id and edge.get("target") == OUTPUT_ID
+        ),
+        None,
+    )
+    has_outgoing = any(edge.get("source") == node_id for edge in edges)
+    _ensure_edge(draft, upstream_node_id, node_id)
+    if existing_tail is not None and not has_outgoing:
+        edges.remove(existing_tail)
+        _ensure_edge(draft, node_id, OUTPUT_ID)
+
+
 def configure_capability(
     user_id: int,
     project_id: int | None,
     capability_id: str,
     tool_type: str,
     params: dict[str, Any],
+    upstream_node_id: str | None = None,
 ) -> dict[str, Any]:
-    """创建或更新一个能力节点，并自动补齐 Input → 节点 → Output 的连接。"""
+    """创建或更新一个能力节点；支持把它接到既有链尾或默认 Input。"""
     _check_project_owner(user_id, project_id)
     meta = CAPABILITY_META.get(capability_id)
     if meta is None:
@@ -161,8 +201,7 @@ def configure_capability(
     node["params"] = params
     node["runStatus"] = "idle"
     node["result"] = None
-    _ensure_edge(draft, INPUT_ID, node["id"])
-    _ensure_edge(draft, node["id"], OUTPUT_ID)
+    _wire_node(draft, node["id"], upstream_node_id)
     revision = current["revision"] + 1
     saved = workflow_repo.upsert(user_id, project_id, revision, draft, _now())
     return {"id": saved["id"], "revision": revision, "draft": draft, "node_id": node["id"]}
@@ -172,12 +211,18 @@ def configure_lyrics(
     user_id: int,
     project_id: int | None,
     inputs: dict[str, Any],
+    upstream_node_id: str | None = None,
 ) -> dict[str, Any]:
     from schemas.capability import LyricsGenerateInput
 
     validated = LyricsGenerateInput.model_validate(inputs)
     return configure_capability(
-        user_id, project_id, "lyrics.generate", "lyrics", validated.model_dump()
+        user_id,
+        project_id,
+        "lyrics.generate",
+        "lyrics",
+        validated.model_dump(),
+        upstream_node_id,
     )
 
 
@@ -185,12 +230,18 @@ def configure_image(
     user_id: int,
     project_id: int | None,
     inputs: dict[str, Any],
+    upstream_node_id: str | None = None,
 ) -> dict[str, Any]:
     from schemas.capability import ImageGenerateInput
 
     validated = ImageGenerateInput.model_validate(inputs)
     return configure_capability(
-        user_id, project_id, "image.generate", "image", validated.model_dump()
+        user_id,
+        project_id,
+        "image.generate",
+        "image",
+        validated.model_dump(),
+        upstream_node_id,
     )
 
 
@@ -224,6 +275,35 @@ def _execution_order(draft: dict[str, Any]) -> list[dict[str, Any]]:
     return ordered
 
 
+UPSTREAM_RESULT_PATTERN = "${upstream.result.content}"
+
+
+def _resolve_params(node: dict[str, Any], draft: dict[str, Any], results: dict[str, Any]) -> dict[str, Any]:
+    """把参数里的 ``${upstream.result.content}`` 替换为直接上游节点的输出。
+
+    没有上游产物时保留原文，让能力自己决定是否缺参数；这样串联链路是数据流，
+    不只是画布上的连线。
+    """
+    node_id = str(node.get("id", ""))
+    upstream_id = next(
+        (
+            str(edge.get("source"))
+            for edge in draft.get("edges", [])
+            if str(edge.get("target")) == node_id
+        ),
+        None,
+    )
+    upstream_content = (results.get(upstream_id) or {}).get("content") if upstream_id else None
+    params = node.get("params") or {}
+    resolved: dict[str, Any] = {}
+    for key, value in params.items():
+        if isinstance(value, str) and upstream_content:
+            resolved[key] = value.replace(UPSTREAM_RESULT_PATTERN, upstream_content)
+        else:
+            resolved[key] = value
+    return resolved
+
+
 async def run_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
     """从 Input 出发，依次执行可达的能力节点；结果按节点写回 Draft。"""
     _check_project_owner(user_id, project_id)
@@ -246,16 +326,21 @@ async def run_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
 
     first_error: str | None = None
     final_status = "succeeded"
+    node_results: dict[str, dict[str, Any]] = {}
     for node in ordered:
         capability_id = node["capability_id"]
+        resolved_params = _resolve_params(node, draft, node_results)
         result = await run_capability(
             capability_id,
-            node.get("params") or {},
+            resolved_params,
             context=CapabilityContext(user_id=user_id, project_id=project_id, source="workflow"),
         )
+        node["resolved_params"] = resolved_params
         node["runStatus"] = result.status
         node["result"] = result.result
         node["error"] = result.error
+        if result.result and result.result.get("content") is not None:
+            node_results[node["id"]] = result.result
         if result.status != "succeeded":
             first_error = first_error or f"{node.get('name')}: {result.error or result.status}"
             final_status = "failed" if result.status == "failed" else "model_unavailable"
@@ -268,6 +353,7 @@ async def run_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
             latest_node["runStatus"] = node["runStatus"]
             latest_node["result"] = node["result"]
             latest_node["error"] = node["error"]
+            latest_node["resolved_params"] = node.get("resolved_params")
 
     final_saved = await asyncio.to_thread(
         workflow_repo.upsert, user_id, project_id, latest["revision"] + 1, latest["draft"], _now()

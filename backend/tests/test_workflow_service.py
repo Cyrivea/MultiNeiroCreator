@@ -6,6 +6,7 @@ workflow_repo 的 SQLite 读写被替换成进程内字典——这里测的是 
 
 import asyncio
 import copy
+from typing import Any
 
 import pytest
 
@@ -183,3 +184,60 @@ def test_workflow_rejects_unconfigured_capability(memory_repo):
     with pytest.raises(AppError) as exc:
         run(run_workflow(1, None))
     assert "未注册的能力" in exc.value.detail
+
+
+# ---------- 串联：上游节点结果作为下游输入 ----------
+
+
+def test_chained_configure_rewires_edges(memory_repo):
+    lyrics = configure_lyrics(1, None, {"theme": "夏夜"})
+    lyrics_id = lyrics["node_id"]
+
+    image = workflow_service.configure_image(
+        1, None, {"prompt": "按歌词出图"}, upstream_node_id=lyrics_id
+    )
+    edges = {(e["source"], e["target"]) for e in image["draft"]["edges"]}
+    image_id = image["node_id"]
+
+    assert (INPUT_ID, image_id) not in edges          # 图像不再直接挂在 Input
+    assert (INPUT_ID, lyrics_id) in edges
+    assert (lyrics_id, image_id) in edges
+    assert (image_id, OUTPUT_ID) in edges
+    assert (lyrics_id, OUTPUT_ID) not in edges        # 链尾迁到图像节点
+
+
+def test_chained_upstream_result_flows_into_downstream_params(memory_repo, monkeypatch):
+    """歌词节点产出内容，经过 ${upstream.result.content} 进入图像节点输入。"""
+    placeholder = "${upstream.result.content}"
+    lyrics = configure_lyrics(1, None, {"theme": "夏夜"})
+    lyrics_id = lyrics["node_id"]
+    workflow_service.configure_image(
+        1,
+        None,
+        {"prompt": f"根据歌词生成画面: {placeholder}"},
+        upstream_node_id=lyrics_id,
+    )
+
+    captured: dict[str, Any] = {}
+
+    async def fake_capability(capability_id, inputs, *, context):
+        if capability_id == "lyrics.generate":
+            return CapabilityResult(
+                capability_id=capability_id,
+                status="succeeded",
+                result={"format": "markdown", "content": "夏夜歌词正文"},
+            )
+        captured["image_inputs"] = inputs
+        return CapabilityResult(
+            capability_id=capability_id,
+            status="succeeded",
+            result={"format": "markdown", "content": "mock image"},
+        )
+
+    monkeypatch.setattr(workflow_service, "run_capability", fake_capability)
+    result = run(run_workflow(1, None))
+
+    assert "夏夜歌词正文" in captured["image_inputs"]["prompt"]
+    assert placeholder not in captured["image_inputs"]["prompt"]
+    final_nodes = {n["id"]: n for n in result["draft"]["nodes"]}
+    assert final_nodes[lyrics_id]["runStatus"] == "succeeded"
