@@ -539,7 +539,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (!node) return
     node.x = Math.round(x)
     node.y = Math.round(y)
-    persist()
+    // 拖动过程不 persist：每帧 JSON.stringify 全图 + localStorage 同步写入会阻塞主线程，
+    // 在画布上表现就是“肉眼可见的一帧一帧的卡”。终点由 commitNodeMove 负责持久化。
   }
 
   function moveNodes(moves: { id: string; x: number; y: number }[]) {
@@ -549,12 +550,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
       node.x = Math.round(move.x)
       node.y = Math.round(move.y)
     }
-    persist()
+    // 同上：只在拖动结束（commitNodeMove）时一次性写回。
   }
 
   function moveEndpoint(endpoint: WorkflowEndpoint, x: number, y: number) {
     endpointPositions.value[endpoint] = { x: Math.round(x), y: Math.round(y) }
-    persist()
+    // 同样不每帧 persist，终点由 commitEndpointMove 负责统一写入。
   }
 
   function commitEndpointMove(previous: WorkflowSnapshot) {
