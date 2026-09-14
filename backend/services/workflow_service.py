@@ -124,6 +124,16 @@ def _ensure_edge(draft: dict[str, Any], source: str, target: str) -> None:
         edges.append({"source": source, "target": target})
 
 
+def clear_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
+    """用户明确说“清空/重建工作区”时从头开始。生成请求不使用这个工具。"""
+    _check_project_owner(user_id, project_id)
+    current = get_draft(user_id, project_id)
+    revision = current["revision"] + 1
+    draft = empty_draft()
+    saved = workflow_repo.upsert(user_id, project_id, revision, draft, _now())
+    return {"id": saved["id"], "revision": revision, "draft": draft}
+
+
 def _wire_node(
     draft: dict[str, Any],
     node_id: str,
@@ -179,6 +189,21 @@ def configure_capability(
 
     current = get_draft(user_id, project_id)
     draft = current["draft"]
+    nodes = draft.get("nodes", [])
+    # 同 capability 只保留一个实例：多余的连同连接线一起清除，避免并联残留
+    same_capability_ids = [
+        item.get("id")
+        for item in nodes
+        if isinstance(item, dict) and item.get("capability_id") == capability_id
+    ]
+    drop_ids = set(same_capability_ids[1:])
+    if drop_ids:
+        draft["nodes"] = [item for item in nodes if item.get("id") not in drop_ids]
+        draft["edges"] = [
+            edge
+            for edge in draft.get("edges", [])
+            if edge.get("source") not in drop_ids and edge.get("target") not in drop_ids
+        ]
     node = next(
         (item for item in draft.get("nodes", []) if item.get("capability_id") == capability_id),
         None,

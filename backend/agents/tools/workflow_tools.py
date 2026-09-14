@@ -20,7 +20,12 @@ from schemas.capability import (
     LyricsStyle,
 )
 from services.capabilities import current_capability_context
-from services.workflow_service import configure_image, configure_lyrics, run_workflow
+from services.workflow_service import (
+    clear_workflow,
+    configure_image,
+    configure_lyrics,
+    run_workflow,
+)
 
 # 模块级标记：工具注册器据此把这两个工具归入 Capability 路由（ainvoke 异步执行）。
 CAPABILITY_ID = "workflow.control"
@@ -100,6 +105,26 @@ def configure_image_workflow(
             "node_id": configured["node_id"],
             "message": "已在工作区创建并配置图像生成节点。图像模型尚未配置时可先搭建流程。",
             "_ui_events": [{"type": "workflow_snapshot", "snapshot": configured["draft"]}],
+        }
+    )
+
+
+@tool
+def clear_workflow_draft() -> str:
+    """仅在用户明确说“清空/重建/全部删掉重来”时才重置整个工作区。
+
+    生成请求绝不能用这个工具；需要调整参数或节点时调用 configure_*，
+    先看能否复用已有节点。
+    """
+    execution = current_capability_context()
+    cleared = clear_workflow(execution.user_id, execution.project_id)
+    return _json(
+        {
+            "status": "cleared",
+            "workflow_id": cleared["id"],
+            "revision": cleared["revision"],
+            "message": "已清空工作区，只保留输入输出端点。",
+            "_ui_events": [{"type": "workflow_snapshot", "snapshot": cleared["draft"]}],
         }
     )
 

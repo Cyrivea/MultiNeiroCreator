@@ -241,3 +241,27 @@ def test_chained_upstream_result_flows_into_downstream_params(memory_repo, monke
     assert placeholder not in captured["image_inputs"]["prompt"]
     final_nodes = {n["id"]: n for n in result["draft"]["nodes"]}
     assert final_nodes[lyrics_id]["runStatus"] == "succeeded"
+
+
+def test_clear_workflow_resets_draft(memory_repo):
+    configure_lyrics(1, None, {"theme": "夏夜"})
+    cleared = workflow_service.clear_workflow(1, None)
+
+    tool_nodes = [n for n in cleared["draft"]["nodes"] if n.get("kind") != "endpoint"]
+    assert tool_nodes == []
+    assert cleared["draft"]["edges"] == []
+    assert cleared["revision"] == 2
+
+
+def test_reconfigure_reuses_node_without_duplicates(memory_repo):
+    workflow_service.configure_image(1, None, {"prompt": "第一次"})
+    second = workflow_service.configure_image(1, None, {"prompt": "第二次"})
+
+    images = [
+        n for n in second["draft"]["nodes"] if n.get("capability_id") == "image.generate"
+    ]
+    assert len(images) == 1
+    assert images[0]["params"]["prompt"] == "第二次"
+    # 同一 capability 的入边仍只有 Input → 节点那一条
+    inputs = [e for e in second["draft"]["edges"] if e["target"] == images[0]["id"]]
+    assert len(inputs) == 1

@@ -229,6 +229,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
     nextRevision?: number,
     nextId?: number | null,
   ) {
+    // AI 快照到达意味着服务器已持有最新 Draft：取消排队中的本地防抖保存，
+    // 否则本地旧图会反写服务器，把 AI 刚连好的边覆盖掉。
+    if (serverSaveTimer !== null) {
+      window.clearTimeout(serverSaveTimer)
+      serverSaveTimer = null
+    }
     isApplyingRemote.value = true
     try {
       const rawNodes = Array.isArray(draft.nodes) ? draft.nodes : []

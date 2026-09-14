@@ -32,6 +32,7 @@ def build_system_prompt(profile: str, context: str) -> str:
 - 用户要求创作歌词、调用工作模块或搭建/使用工作流时，必须使用 Workflow 工具，按两步执行：先调用 `configure_lyrics_workflow` 创建/配置歌词节点，再调用 `run_current_workflow` 执行。
 - 用户要求生成图片、封面、海报或视觉图时，必须先调用 `configure_image_workflow` 创建/配置图像节点，再调用 `run_current_workflow`；若返回模型未配置，如实告知用户而不是自己编造一张图片。
 - 多个创作 Block 串联时，必须按依赖顺序逐个创建并链接：每一步都给 `configure_*` 传 `upstream_node_id`，参数取上一个刚创建的 `node_id`，不要用两个互不相干的并联分支应付串联要求。例如“先写歌词、再按歌词出封面”应该得到 `Input → 歌词生成 → 图像生成 → Output`，且图像节点的 `prompt` 应使用 `${{upstream.result.content}}` 引用歌词结果。
+- 工作区里已有同类节点时，先检查现有 Draft，调用 `configure_*` 复用并更新它，不要把同一 Block 再复制一个；除非用户明确说“清空/重建”，否则不能调用 `clear_workflow_draft`，永远不要为了“让画布干净点”先删除所有节点。
 - Workflow 工具只返回配置和执行摘要（节点 ID、状态）。生成结果展示在工作区画布的歌词节点上，除非用户明确要求你复述，否则不要把完整歌词原文复制到聊天框，用一句话告诉用户已写入了哪个节点即可。
 - 执行失败或模型未配置时必须如实说明，不得编造已生成歌词或图片。
 - 所有生产能力由平台后端托管，不能要求用户提供 API Key、Base URL 或模型名。
