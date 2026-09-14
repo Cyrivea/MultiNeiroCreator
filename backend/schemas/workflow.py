@@ -19,8 +19,9 @@ class WorkflowDraftResponse(BaseModel):
 
 class WorkflowRunResponse(BaseModel):
     run_id: str
-    revision: int
-    draft: dict[str, Any]
-    status: Literal["succeeded", "model_unavailable", "failed"]
+    job_id: str | None = None
+    revision: int | None = None
+    draft: dict[str, Any] | None = None
+    status: Literal["queued", "running", "succeeded", "failed", "model_unavailable"]
     result: dict[str, Any] | None = None
     error: str | None = None

@@ -47,6 +47,8 @@ asyncio_mode = "auto"  # 原 pytest.ini 内容，已合并到这里
 [tool.ruff]
 line-length = 110
 target-version = "py312"
+# 一次性分析脚本（如 eval_*）不参与项目质量门禁
+exclude = ["scripts"]
 
 [tool.ruff.lint]
 # 在默认基础上显式选择规则集：E/W 风格、F 逻辑错误、I 导入排序、B 常见 bug、

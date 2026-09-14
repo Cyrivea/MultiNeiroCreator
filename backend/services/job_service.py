@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from core import config
 from repositories import document_repo, job_repo, project_repo
 
-SUPPORTED_JOB_TYPES = {"document_ingest", "document_reindex"}
+SUPPORTED_JOB_TYPES = {"document_ingest", "document_reindex", "workflow_run"}
 
 
 def utc_now() -> str:
@@ -31,6 +31,13 @@ def _validate_payload(
             raise HTTPException(status_code=404, detail="文档不存在")
         if document["project_id"] != project_id:
             raise HTTPException(status_code=409, detail="任务项目与文档不一致")
+    if job_type == "workflow_run":
+        run_id = payload.get("run_id")
+        if not isinstance(run_id, str) or len(run_id) < 8:
+            raise HTTPException(status_code=422, detail="workflow_run 任务需要合法的 run_id")
+        draft = payload.get("draft")
+        if not isinstance(draft, dict) or not isinstance(draft.get("nodes"), list):
+            raise HTTPException(status_code=422, detail="workflow_run 任务需要 draft 快照")
 
 
 def create_job(

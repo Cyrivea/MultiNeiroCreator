@@ -17,7 +17,6 @@ from services.workflow_service import (
     INPUT_ID,
     OUTPUT_ID,
     configure_lyrics,
-    run_lyrics_workflow,
     run_workflow,
     save_draft,
 )
@@ -93,7 +92,7 @@ def test_run_workflow_writes_result_back_to_node(memory_repo, monkeypatch):
         )
 
     monkeypatch.setattr(workflow_service, "run_capability", fake_capability)
-    result = run(run_lyrics_workflow(1, None))
+    result = run(run_workflow(1, None))
 
     node = next(n for n in result["draft"]["nodes"] if n.get("capability_id"))
     assert node["runStatus"] == "succeeded"
@@ -113,7 +112,7 @@ def test_run_workflow_surfaces_model_unavailable(memory_repo, monkeypatch):
         )
 
     monkeypatch.setattr(workflow_service, "run_capability", fake_capability)
-    result = run(run_lyrics_workflow(1, None))
+    result = run(run_workflow(1, None))
 
     assert result["status"] == "model_unavailable"
     node = next(n for n in result["draft"]["nodes"] if n.get("capability_id"))
@@ -241,6 +240,67 @@ def test_chained_upstream_result_flows_into_downstream_params(memory_repo, monke
     assert placeholder not in captured["image_inputs"]["prompt"]
     final_nodes = {n["id"]: n for n in result["draft"]["nodes"]}
     assert final_nodes[lyrics_id]["runStatus"] == "succeeded"
+
+
+def test_submit_run_enqueues_job_and_marks_nodes_running(memory_repo, monkeypatch):
+    configure_lyrics(1, None, {"theme": "夏夜"})
+    jobs = []
+    runs = []
+    monkeypatch.setattr(
+        workflow_service.job_service,
+        "create_job",
+        lambda **kw: jobs.append(kw) or {"id": "job-1"},
+    )
+    monkeypatch.setattr(
+        workflow_service.workflow_run_repo, "create", lambda **kw: runs.append(kw) or kw
+    )
+    result = workflow_service.submit_workflow_run(1, None)
+
+    assert result["status"] == "queued"
+    assert result["job_id"] == "job-1"
+    assert jobs[0]["job_type"] == "workflow_run"
+    assert jobs[0]["payload"]["run_id"] == result["run_id"]
+    node = next(n for n in result["draft"]["nodes"] if n.get("capability_id"))
+    assert node["runStatus"] == "running"
+
+
+def test_execute_snapshot_run_writes_steps_and_statuses(memory_repo, monkeypatch):
+    configure_lyrics(1, None, {"theme": "夏夜"})
+    draft = copy.deepcopy(workflow_service.get_draft(1, None)["draft"])
+    steps = []
+    statuses = {}
+    monkeypatch.setattr(
+        workflow_service.workflow_run_repo,
+        "create_step",
+        lambda **kw: steps.append(kw) or {"id": f"step-{len(steps)}"},
+    )
+    monkeypatch.setattr(workflow_service.workflow_run_repo, "finish_step", lambda *a, **k: True)
+    monkeypatch.setattr(
+        workflow_service.workflow_run_repo,
+        "update_status",
+        lambda run_id, status, **kw: statuses.__setitem__(run_id, status) or True,
+    )
+
+    async def fake_capability(capability_id, inputs, *, context):
+        return CapabilityResult(
+            capability_id=capability_id,
+            status="succeeded",
+            result={"format": "markdown", "content": "歌词正文"},
+        )
+
+    monkeypatch.setattr(workflow_service, "run_capability", fake_capability)
+    out = workflow_service.execute_workflow_run_job(
+        job_id="j", run_id="run-1", draft_snapshot=draft, user_id=1, project_id=None
+    )
+
+    assert out["status"] == "succeeded"
+    assert statuses["run-1"] == "succeeded"
+    assert steps[0]["node_id"]
+    node = next(
+        n for n in workflow_service.get_draft(1, None)["draft"]["nodes"] if n.get("capability_id")
+    )
+    assert node["runStatus"] == "succeeded"
+    assert node["result"]["content"] == "歌词正文"
 
 
 def test_clear_workflow_resets_draft(memory_repo):

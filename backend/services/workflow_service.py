@@ -8,12 +8,14 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from core.exceptions import AppError
-from repositories import workflow_repo
+from repositories import workflow_repo, workflow_run_repo
+from services import job_service
 from services.capabilities import CAPABILITY_REGISTRY, CapabilityContext, run_capability
 from services.project_service import get_project
 
@@ -394,6 +396,137 @@ async def run_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
     }
 
 
-async def run_lyrics_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
-    """兼容旧调用名；实际直接委托通用 Runner。"""
-    return await run_workflow(user_id, project_id)
+# ---------- 异步任务队列接入（submit → 后台 Worker 执行） ----------
+
+
+def submit_workflow_run(user_id: int, project_id: int | None) -> dict[str, Any]:
+    """创建异步运行记录并入队任务；立即返回 run/job 信息，不阻塞 HTTP。"""
+    _check_project_owner(user_id, project_id)
+    current = get_draft(user_id, project_id)
+    draft = current["draft"]
+    ordered = _execution_order(draft)
+    for node in ordered:
+        capability_id = node.get("capability_id")
+        if capability_id not in CAPABILITY_REGISTRY:
+            raise AppError(f"未注册的能力: {capability_id}")
+
+    run_id = f"run-{uuid.uuid4().hex[:12]}"
+    # 先把节点标为 running 存库，画布会有“已排队”的即时反馈
+    running_draft = copy.copy(draft)
+    running_draft["nodes"] = [
+        {
+            **n,
+            "runStatus": "running" if n.get("capability_id") else n.get("runStatus"),
+        }
+        for n in draft.get("nodes", [])
+    ]
+    running_draft["edges"] = list(draft.get("edges", []))
+    saved = workflow_repo.upsert(user_id, project_id, current["revision"] + 1, running_draft, _now())
+
+    job = job_service.create_job(
+        user_id=user_id,
+        job_type="workflow_run",
+        payload={"run_id": run_id, "draft": running_draft},
+        project_id=project_id,
+    )
+    workflow_run_repo.create(
+        run_id=run_id,
+        user_id=user_id,
+        project_id=project_id,
+        draft_revision=saved["revision"],
+        draft_snapshot=running_draft,
+        workflow_id=saved["id"],
+        job_id=job["id"],
+        created_at=_now(),
+    )
+    return {
+        "run_id": run_id,
+        "job_id": job["id"],
+        "status": "queued",
+        "revision": saved["revision"],
+        "draft": running_draft,
+    }
+
+
+async def _execute_snapshot_run(
+    user_id: int, project_id: int | None, run_id: str, draft_snapshot: dict[str, Any]
+) -> dict[str, Any]:
+    """后台 Worker 用 Draft 快照真实执行一条 Workflow；每一步写 step 和节点状态。"""
+    ordered = _execution_order(draft_snapshot)
+    for node in ordered:
+        capability_id = node.get("capability_id")
+        if capability_id not in CAPABILITY_REGISTRY:
+            workflow_run_repo.update_status(
+                run_id, "failed", error=f"未注册的能力: {capability_id}", finished_at=_now()
+            )
+            raise AppError(f"未注册的能力: {capability_id}")
+
+    node_outputs: dict[str, dict[str, Any]] = {}
+    first_error: str | None = None
+    final_status = "succeeded"
+    current_live = await asyncio.to_thread(get_draft, user_id, project_id)
+    live_draft = current_live["draft"]
+    live_by_id = {n.get("id"): n for n in live_draft.get("nodes", [])}
+
+    for node in ordered:
+        resolved_params = _resolve_params(node, draft_snapshot, node_outputs)
+        step = workflow_run_repo.create_step(
+            step_id=f"step-{uuid.uuid4().hex[:12]}",
+            run_id=run_id,
+            node_id=node["id"],
+            capability_id=node["capability_id"],
+            input_payload=resolved_params,
+            created_at=_now(),
+        )
+        result = await run_capability(
+            node["capability_id"],
+            resolved_params,
+            context=CapabilityContext(user_id=user_id, project_id=project_id, source="workflow"),
+        )
+        workflow_run_repo.finish_step(
+            step["id"],
+            result.status if result.status != "model_unavailable" else "failed",
+            result.result,
+            result.error,
+        )
+        live_node = live_by_id.get(node["id"])
+        if live_node is not None:
+            live_node["runStatus"] = result.status
+            live_node["result"] = result.result
+            live_node["error"] = result.error
+            live_node["resolved_params"] = resolved_params
+            await asyncio.to_thread(
+                workflow_repo.upsert,
+                user_id,
+                project_id,
+                current_live["revision"] + 1,
+                live_draft,
+                _now(),
+            )
+        if result.result and result.result.get("content") is not None:
+            node_outputs[node["id"]] = result.result
+        if result.status != "succeeded":
+            first_error = first_error or f"{node.get('name')}: {result.error or result.status}"
+            final_status = "failed" if result.status == "failed" else "model_unavailable"
+
+    workflow_run_repo.update_status(
+        run_id, final_status if final_status == "succeeded" else "failed", error=first_error, finished_at=_now()
+    )
+    return {
+        "run_id": run_id,
+        "status": final_status,
+        "error": first_error,
+        "executed": [n["id"] for n in ordered],
+    }
+
+
+def execute_workflow_run_job(
+    job_id: str,
+    run_id: str,
+    draft_snapshot: dict[str, Any],
+    user_id: int,
+    project_id: int | None,
+) -> dict[str, Any]:
+    """同步入口，供 Worker 调用；内部用 asyncio.run 驱动 async Capability Runtime。"""
+    workflow_run_repo.update_status(run_id, "running", started_at=_now())
+    return asyncio.run(_execute_snapshot_run(user_id, project_id, run_id, draft_snapshot))

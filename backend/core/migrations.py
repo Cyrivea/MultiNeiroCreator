@@ -234,6 +234,51 @@ def _m007_create_workflow_drafts(conn: sqlite3.Connection) -> None:
     )
 
 
+def _m008_create_workflow_runs(conn: sqlite3.Connection) -> None:
+    """Workflow 异步运行账本：一次运行 + 每个节点一步，长时间生成不再挂在请求里。"""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS workflow_runs (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+            workflow_id INTEGER,
+            draft_revision INTEGER NOT NULL,
+            draft_snapshot_json TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
+            error TEXT,
+            job_id TEXT REFERENCES jobs(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS workflow_steps (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+            node_id TEXT NOT NULL,
+            capability_id TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
+            input_json TEXT,
+            output_json TEXT,
+            error TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_workflow_runs_user_project "
+        "ON workflow_runs(user_id, project_id, created_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_workflow_steps_run "
+        "ON workflow_steps(run_id)"
+    )
+
+
 MIGRATIONS: list[Migration] = [
     ("baseline: users/messages/projects + indexes", _m001_baseline),
     ("add foreign keys via table rebuild", _m002_add_foreign_keys),
@@ -242,6 +287,7 @@ MIGRATIONS: list[Migration] = [
     ("add document content hash", _m005_add_document_hash),
     ("add message citation metadata", _m006_add_message_citations),
     ("create workflow drafts", _m007_create_workflow_drafts),
+    ("create workflow run/step ledger", _m008_create_workflow_runs),
 ]
 
 

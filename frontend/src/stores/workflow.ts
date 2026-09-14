@@ -11,6 +11,7 @@ import {
   type WorkflowDraftNode,
   type WorkflowDraftResponse,
 } from '@/serve/workflow'
+import { waitForAgentJob } from '@/serve/agent'
 
 export type WorkflowCanvasMode = 'select' | 'pan'
 export type WorkflowEndpoint = 'input' | 'output'
@@ -115,6 +116,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const currentProjectId = ref<number | null>(null)
   let currentStorageKey = 'mnc-workflow-draft'
   let serverSaveTimer: number | null = null
+  let runningPollTimer: number | null = null
 
   const selectedNode = computed(
     () => nodes.value.find((node) => node.id === selectedNodeId.value) ?? null,
@@ -276,7 +278,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       if (nextId !== undefined) workflowId.value = nextId
       selectedNodeId.value = null
       selectedNodeIds.value = []
-      // 只写本地缓存，不再回写服务器——这条数据就来自服务器
+      // 只写本地缓存，不再回写服务器——这条数据本就来自服务器
       localStorage.setItem(
         currentStorageKey,
         JSON.stringify({
@@ -287,8 +289,37 @@ export const useWorkflowStore = defineStore('workflow', () => {
           workflowId: workflowId.value,
         }),
       )
+      // 有节点还在 running 时启动后台轮询，等 Worker 完成后把终态刷到画布
+      if (nodes.value.some((node) => node.runStatus === 'running')) {
+        startRunningPoll()
+      }
     } finally {
       isApplyingRemote.value = false
+    }
+  }
+
+  /** 后台轮询：Workflow 跑着的时候每 1.5s 拉一次 Draft，直到没有节点在 running。 */
+  function startRunningPoll() {
+    if (runningPollTimer !== null) return
+    runningPollTimer = window.setInterval(() => {
+      if (!nodes.value.some((node) => node.runStatus === 'running')) {
+        window.clearInterval(runningPollTimer!)
+        runningPollTimer = null
+        return
+      }
+      void refreshFromServer(currentProjectId.value)
+    }, 1500)
+  }
+
+  /** 项目切换/组件销毁前调用，停掉排队中的保存和轮询。 */
+  function cancelPendingSync() {
+    if (serverSaveTimer !== null) {
+      window.clearTimeout(serverSaveTimer)
+      serverSaveTimer = null
+    }
+    if (runningPollTimer !== null) {
+      window.clearInterval(runningPollTimer)
+      runningPollTimer = null
     }
   }
 
@@ -332,9 +363,25 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   async function runCurrentWorkflow(): Promise<ToolRunStatus> {
     await saveDraftToServer()
-    const result = await runWorkflow(currentProjectId.value)
-    applyWorkflowSnapshot(result.draft, result.revision, result.id)
-    return result.status
+    const submission = await runWorkflow(currentProjectId.value)
+    // 立即显示 running 节点，让用户知道任务已排队
+    if (submission.draft) {
+      applyWorkflowSnapshot(submission.draft, submission.revision, submission.id)
+    }
+    if (!submission.job_id) {
+      return submission.status as ToolRunStatus
+    }
+    try {
+      const job = await waitForAgentJob(submission.job_id)
+      await refreshFromServer(currentProjectId.value)
+      const jobStatus = (job.result?.status as ToolRunStatus | undefined) ?? job.status
+      if (jobStatus === 'succeeded') return 'succeeded'
+      if (jobStatus === 'model_unavailable') return 'model_unavailable'
+      return 'failed'
+    } catch (error) {
+      await refreshFromServer(currentProjectId.value)
+      throw error
+    }
   }
 
   function clearSelection() {
@@ -684,5 +731,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     refreshFromServer,
     saveDraftToServer,
     runCurrentWorkflow,
+    cancelPendingSync,
   }
 })

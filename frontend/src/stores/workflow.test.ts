@@ -12,6 +12,9 @@ vi.mock('@/serve/workflow', () => ({
   saveWorkflowDraft: vi.fn(),
   runWorkflow: vi.fn(),
 }))
+vi.mock('@/serve/agent', () => ({
+  waitForAgentJob: vi.fn(),
+}))
 
 const AI_DRAFT: WorkflowDraft = {
   nodes: [

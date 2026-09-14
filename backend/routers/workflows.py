@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from core.deps import verify_token
 from schemas.workflow import WorkflowDraftRequest, WorkflowDraftResponse, WorkflowRunResponse
 from services.project_service import get_project
-from services.workflow_service import get_draft, run_lyrics_workflow, save_draft
+from services.workflow_service import get_draft, save_draft, submit_workflow_run
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
@@ -29,9 +29,7 @@ def save_workflow_draft(req: WorkflowDraftRequest, user=Depends(verify_token)):
     return save_draft(user["id"], req.project_id, req.draft, req.expected_revision)
 
 
-@router.post("/run", response_model=WorkflowRunResponse)
+@router.post("/run", response_model=WorkflowRunResponse, status_code=202)
 async def run_workflow(project_id: int | None = Query(None), user=Depends(verify_token)):
     await asyncio.to_thread(_check_project, user["id"], project_id)
-    run = await run_lyrics_workflow(user["id"], project_id)
-    result = run.pop("result")
-    return {**run, "status": result.status, "result": result.result, "error": result.error}
+    return await asyncio.to_thread(submit_workflow_run, user["id"], project_id)

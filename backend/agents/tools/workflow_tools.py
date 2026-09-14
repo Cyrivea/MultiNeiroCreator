@@ -5,6 +5,7 @@
 现有画布据此实时更新。user/project 归属由编排器注入，模型不可见。
 """
 
+import asyncio
 import json
 
 from langchain_core.tools import tool
@@ -24,7 +25,7 @@ from services.workflow_service import (
     clear_workflow,
     configure_image,
     configure_lyrics,
-    run_workflow,
+    submit_workflow_run,
 )
 
 # 模块级标记：工具注册器据此把这两个工具归入 Capability 路由（ainvoke 异步执行）。
@@ -131,20 +132,17 @@ def clear_workflow_draft() -> str:
 
 @tool
 async def run_current_workflow() -> str:
-    """运行当前工作区 Workflow，并把节点的状态和结果写回画布。"""
+    """把当前工作区 Workflow 排入后台执行队列，并把节点状态先写成“运行中”发到画布。"""
     execution = current_capability_context()
-    result = await run_workflow(execution.user_id, execution.project_id)
+    result = await asyncio.to_thread(submit_workflow_run, execution.user_id, execution.project_id)
     return _json(
         {
             "status": result["status"],
             "run_id": result["run_id"],
+            "job_id": result["job_id"],
             "revision": result["revision"],
-            "message": "当前 Workflow 已执行，各节点状态与结果已写回画布。",
-            "error": result["error"],
-            "_ui_events": [
-                {"type": "workflow_snapshot", "snapshot": result["running_draft"]},
-                {"type": "workflow_snapshot", "snapshot": result["draft"]},
-            ],
+            "message": "Workflow 已排队执行，节点显示运行状态，后台 Worker 完成后结果写回画布。",
+            "_ui_events": [{"type": "workflow_snapshot", "snapshot": result["draft"]}],
         }
     )
 

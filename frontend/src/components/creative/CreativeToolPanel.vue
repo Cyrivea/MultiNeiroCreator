@@ -1,78 +1,65 @@
 <template>
-  <div class="creative-tool-panel-layer" :class="{ 'is-active': tool }">
+  <div class="panel-layer" :class="{ 'is-active': tool }">
     <Transition name="tool-config" mode="out-in">
       <section
         v-if="tool"
         ref="panelRef"
         :key="tool.id"
-        class="creative-tool-config"
+        class="panel"
         role="dialog"
         :aria-label="`${tool.name}参数面板`"
         @click.stop
       >
-        <header class="creative-tool-config-head">
-          <div class="creative-tool-config-heading">
-            <span class="creative-tool-config-mark" :style="{ color: tool.color }">
-              {{ artMark(tool.type) }}
-            </span>
-            <div>
-              <div class="creative-tool-config-eyebrow">{{ tool.badge }}</div>
+        <header class="panel-head">
+          <div class="panel-title">
+            <span class="panel-mark" :style="{ color: tool.color }">{{ artMark(tool.type) }}</span>
+            <div class="panel-title-copy">
+              <div class="panel-eyebrow">{{ tool.badge }}</div>
               <h2>{{ tool.name }}</h2>
               <p>{{ tool.description }}</p>
             </div>
           </div>
-          <button
-            type="button"
-            class="creative-tool-config-close"
-            aria-label="关闭参数面板"
-            @click="saveAndClose"
-          >
+          <button type="button" class="panel-close" aria-label="关闭参数面板" @click="saveAndClose">
             ✕
           </button>
         </header>
 
-        <div class="creative-tool-config-body">
-          <div class="creative-tool-config-notice">
-            <span aria-hidden="true">✦</span>
-            <span>{{ tool.inputHint }} · 配置生成参数</span>
-          </div>
-
-          <div class="creative-input-section">
-            <div class="creative-input-section-head">
+        <div class="panel-body">
+          <section class="block">
+            <header class="block-head">
               <span>主要输入</span>
               <small>来自输入节点或上一步结果</small>
-            </div>
-            <div class="creative-main-input-card">
-              <span class="creative-input-port-mark">⇥</span>
-              <div>
+            </header>
+            <div class="main-input-card">
+              <span class="port-mark" aria-hidden="true">⇥</span>
+              <div class="main-input-copy">
                 <strong>{{ mainInputLabel }}</strong>
                 <small>{{ mainInputDetail }} · {{ mainInputHint(tool.type) }}</small>
               </div>
-              <span class="creative-input-status">等待输入</span>
+              <span class="input-status" :class="{ 'is-linked': mainInputSource }">
+                {{ mainInputSource ? '已连接' : '等待连接' }}
+              </span>
             </div>
-          </div>
+          </section>
 
-          <div class="creative-input-section">
-            <div class="creative-input-section-head">
+          <section class="block">
+            <header class="block-head">
               <span>补充参考</span>
-              <small>可添加图片或文本，不替换主要输入</small>
-            </div>
-            <div v-if="references.length" class="creative-reference-list">
-              <div
-                v-for="reference in references"
-                :key="reference.id"
-                class="creative-reference-item"
-              >
-                <span class="creative-reference-type">{{
+              <small>可选 · 不替换主要输入</small>
+            </header>
+
+            <div v-if="references.length" class="reference-list">
+              <div v-for="reference in references" :key="reference.id" class="reference-item">
+                <span class="reference-type" aria-hidden="true">{{
                   reference.type === 'image' ? '▧' : 'Aa'
                 }}</span>
-                <span class="creative-reference-copy">
+                <span class="reference-copy">
                   <strong>{{ reference.name }}</strong>
                   <small>{{ reference.detail ?? '用户补充参考' }}</small>
                 </span>
                 <button
                   type="button"
-                  class="creative-reference-remove"
+                  class="reference-remove"
                   :aria-label="`移除${reference.name}`"
                   @click="removeReference(reference.id)"
                 >
@@ -80,235 +67,297 @@
                 </button>
               </div>
             </div>
-            <div v-else class="creative-reference-empty">
-              还没有补充参考，生成时可只使用主要输入。
-            </div>
-            <div class="creative-reference-actions">
-              <label class="creative-reference-add">
-                <span>＋ 图片 / 文件</span>
+            <div v-else class="reference-empty">暂无参考，生成时可只使用主要输入。</div>
+
+            <div class="reference-actions">
+              <label class="ghost-btn">
                 <input
                   type="file"
                   accept="image/*,.txt,.md,.pdf,.wav,.mp3"
                   @change="handleFileChange"
                 />
+                <span>＋ 图片 / 文件</span>
               </label>
               <button
                 type="button"
-                class="creative-reference-add"
+                class="ghost-btn"
                 @click="textReferenceOpen = !textReferenceOpen"
               >
                 ＋ 文本参考
               </button>
             </div>
-            <div v-if="textReferenceOpen" class="creative-text-reference-form">
+
+            <div v-if="textReferenceOpen" class="reference-form">
               <textarea
                 v-model="textReference"
                 rows="2"
                 placeholder="输入风格、限制或画面补充说明"
               ></textarea>
-              <button type="button" @click="addTextReference">添加</button>
+              <button type="button" class="btn-secondary btn-small" @click="addTextReference">
+                添加
+              </button>
             </div>
-          </div>
+          </section>
 
-          <div class="creative-output-preview">
-            <span class="creative-output-port-mark">⇥</span>
+          <section class="block">
+            <header class="block-head">
+              <span>生成参数</span>
+              <small>{{ tool.inputHint }}</small>
+            </header>
+
+            <template v-if="tool.type === 'lyrics'">
+              <div class="field">
+                <span class="field-label">创作主题</span>
+                <textarea
+                  class="field-control field-textarea"
+                  :value="tool.params.theme"
+                  rows="3"
+                  placeholder="输入创作主题，例如：漫步在夏夜的城市街头"
+                  @input="update('theme', $event)"
+                ></textarea>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <span class="field-label">曲风</span>
+                  <select
+                    class="field-control field-select"
+                    :value="tool.params.style"
+                    @change="update('style', $event)"
+                  >
+                    <option>流行抒情</option>
+                    <option>城市民谣</option>
+                    <option>电子流行</option>
+                    <option>摇滚叙事</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <span class="field-label">语言</span>
+                  <select
+                    class="field-control field-select"
+                    :value="tool.params.language"
+                    @change="update('language', $event)"
+                  >
+                    <option>中文</option>
+                    <option>英文</option>
+                    <option>中英混合</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <span class="field-label">情绪方向</span>
+                <select
+                  class="field-control field-select"
+                  :value="tool.params.mood"
+                  @change="update('mood', $event)"
+                >
+                  <option>温柔、克制</option>
+                  <option>明亮、轻快</option>
+                  <option>忧郁、克制</option>
+                  <option>热烈、昂扬</option>
+                  <option>孤独、怀旧</option>
+                </select>
+              </div>
+            </template>
+
+            <template v-else-if="tool.type === 'image'">
+              <div class="field">
+                <span class="field-label">画面描述</span>
+                <textarea
+                  class="field-control field-textarea"
+                  :value="tool.params.prompt"
+                  rows="4"
+                  placeholder="输入画面描述，例如：雨夜霓虹下挂着工作灯的小店"
+                  @input="update('prompt', $event)"
+                ></textarea>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <span class="field-label">视觉风格</span>
+                  <select
+                    class="field-control field-select"
+                    :value="tool.params.style"
+                    @change="update('style', $event)"
+                  >
+                    <option>电影概念艺术</option>
+                    <option>二次元插画</option>
+                    <option>写实摄影</option>
+                    <option>复古胶片</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <span class="field-label">画面比例</span>
+                  <select
+                    class="field-control field-select"
+                    :value="tool.params.ratio"
+                    @change="update('ratio', $event)"
+                  >
+                    <option>16:9</option>
+                    <option>1:1</option>
+                    <option>9:16</option>
+                    <option>4:3</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <span class="field-label">色彩方向</span>
+                <select
+                  class="field-control field-select"
+                  :value="tool.params.palette"
+                  @change="update('palette', $event)"
+                >
+                  <option>深蓝与紫色</option>
+                  <option>黑白</option>
+                  <option>暖金</option>
+                  <option>低饱和绿色</option>
+                  <option>高对比彩色</option>
+                </select>
+              </div>
+            </template>
+
+            <template v-else-if="tool.type === 'video'">
+              <div class="field-row">
+                <div class="field">
+                  <span class="field-label">输入方式</span>
+                  <select
+                    class="field-control field-select"
+                    :value="tool.params.source"
+                    @change="update('source', $event)"
+                  >
+                    <option>文字描述</option>
+                    <option>图片驱动</option>
+                    <option>音频驱动</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <span class="field-label">时长</span>
+                  <select
+                    class="field-control field-select"
+                    :value="tool.params.duration"
+                    @change="update('duration', $event)"
+                  >
+                    <option>5 秒</option>
+                    <option>15 秒</option>
+                    <option>30 秒</option>
+                    <option>60 秒</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <span class="field-label">镜头描述</span>
+                <textarea
+                  class="field-control field-textarea"
+                  :value="tool.params.prompt"
+                  rows="4"
+                  placeholder="描述镜头运动和画面节奏"
+                  @input="update('prompt', $event)"
+                ></textarea>
+              </div>
+              <div class="field">
+                <span class="field-label">运动方式</span>
+                <input
+                  class="field-control field-input"
+                  :value="tool.params.motion"
+                  placeholder="例如：平滑推进"
+                  @input="update('motion', $event)"
+                />
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="field">
+                <span class="field-label">输入音频</span>
+                <div class="file-input-row">
+                  <span class="file-input-name">{{ tool.params.source }}</span>
+                  <button
+                    type="button"
+                    class="ghost-btn btn-inline"
+                    @click="updateValue('source', 'demo-audio-input.wav')"
+                  >
+                    选择文件
+                  </button>
+                </div>
+              </div>
+              <div class="field">
+                <span class="field-label">分析特征</span>
+                <select
+                  class="field-control field-select"
+                  :value="tool.params.feature"
+                  @change="update('feature', $event)"
+                >
+                  <option>频段与波形质感</option>
+                  <option>节奏与动态</option>
+                  <option>音色与空间感</option>
+                </select>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <span class="field-label">生成强度</span>
+                  <select
+                    class="field-control field-select"
+                    :value="tool.params.intensity"
+                    @change="update('intensity', $event)"
+                  >
+                    <option>轻微</option>
+                    <option>中等</option>
+                    <option>强烈</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <span class="field-label">节奏处理</span>
+                  <select
+                    class="field-control field-select"
+                    :value="tool.params.variation"
+                    @change="update('variation', $event)"
+                  >
+                    <option>保留原始节奏</option>
+                    <option>轻微变化</option>
+                    <option>重新编排</option>
+                  </select>
+                </div>
+              </div>
+            </template>
+          </section>
+
+          <div class="output-note">
+            <span class="port-mark" aria-hidden="true">⇥</span>
             <div>
               <strong>输出接口</strong>
-              <small>生成后结果会显示在当前面板</small>
+              <small>生成结果写入当前节点，可被下游节点引用</small>
             </div>
           </div>
 
-          <template v-if="tool.type === 'lyrics'">
-            <label class="creative-field">
-              <span>创作主题</span>
-              <textarea
-                :value="tool.params.theme"
-                rows="3"
-                placeholder="输入创作主题，例如：漫步在夏夜的城市街头"
-                @input="update('theme', $event)"
-              ></textarea>
-            </label>
-            <div class="creative-field-grid">
-              <label class="creative-field">
-                <span>曲风</span>
-                <select :value="tool.params.style" @change="update('style', $event)">
-                  <option>流行抒情</option>
-                  <option>城市民谣</option>
-                  <option>电子流行</option>
-                  <option>摇滚叙事</option>
-                </select>
-              </label>
-              <label class="creative-field">
-                <span>语言</span>
-                <select :value="tool.params.language" @change="update('language', $event)">
-                  <option>中文</option>
-                  <option>英文</option>
-                  <option>中英混合</option>
-                </select>
-              </label>
-            </div>
-            <label class="creative-field">
-              <span>情绪方向</span>
-              <select :value="tool.params.mood" @change="update('mood', $event)">
-                <option>温柔、克制</option>
-                <option>明亮、轻快</option>
-                <option>忧郁、克制</option>
-                <option>热烈、昂扬</option>
-                <option>孤独、怀旧</option>
-              </select>
-            </label>
-          </template>
-
-          <template v-else-if="tool.type === 'image'">
-            <label class="creative-field">
-              <span>画面描述</span>
-              <textarea
-                :value="tool.params.prompt"
-                rows="4"
-                placeholder="输入画面描述，例如：雨夜霓虹下挂着工作灯的小店"
-                @input="update('prompt', $event)"
-              ></textarea>
-            </label>
-            <div class="creative-field-grid">
-              <label class="creative-field">
-                <span>视觉风格</span>
-                <select :value="tool.params.style" @change="update('style', $event)">
-                  <option>电影概念艺术</option>
-                  <option>二次元插画</option>
-                  <option>写实摄影</option>
-                  <option>复古胶片</option>
-                </select>
-              </label>
-              <label class="creative-field">
-                <span>画面比例</span>
-                <select :value="tool.params.ratio" @change="update('ratio', $event)">
-                  <option>16:9</option>
-                  <option>1:1</option>
-                  <option>9:16</option>
-                  <option>4:3</option>
-                </select>
-              </label>
-            </div>
-            <label class="creative-field">
-              <span>色彩方向</span>
-              <select :value="tool.params.palette" @change="update('palette', $event)">
-                <option>深蓝与紫色</option>
-                <option>黑白</option>
-                <option>暖金</option>
-                <option>低饱和绿色</option>
-                <option>高对比彩色</option>
-              </select>
-            </label>
-          </template>
-
-          <template v-else-if="tool.type === 'video'">
-            <div class="creative-field-grid">
-              <label class="creative-field">
-                <span>输入方式</span>
-                <select :value="tool.params.source" @change="update('source', $event)">
-                  <option>文字描述</option>
-                  <option>图片驱动</option>
-                  <option>音频驱动</option>
-                </select>
-              </label>
-              <label class="creative-field">
-                <span>时长</span>
-                <select :value="tool.params.duration" @change="update('duration', $event)">
-                  <option>5 秒</option>
-                  <option>15 秒</option>
-                  <option>30 秒</option>
-                  <option>60 秒</option>
-                </select>
-              </label>
-            </div>
-            <label class="creative-field">
-              <span>镜头描述</span>
-              <textarea
-                :value="tool.params.prompt"
-                rows="4"
-                @input="update('prompt', $event)"
-              ></textarea>
-            </label>
-            <label class="creative-field">
-              <span>运动方式</span>
-              <input :value="tool.params.motion" @input="update('motion', $event)" />
-            </label>
-          </template>
-
-          <template v-else>
-            <label class="creative-field">
-              <span>输入音频</span>
-              <div class="creative-file-input">
-                <span>{{ tool.params.source }}</span>
-                <button type="button" @click="updateValue('source', 'demo-audio-input.wav')">
-                  选择文件
-                </button>
-              </div>
-            </label>
-            <label class="creative-field">
-              <span>分析特征</span>
-              <select :value="tool.params.feature" @change="update('feature', $event)">
-                <option>频段与波形质感</option>
-                <option>节奏与动态</option>
-                <option>音色与空间感</option>
-              </select>
-            </label>
-            <div class="creative-field-grid">
-              <label class="creative-field">
-                <span>生成强度</span>
-                <select :value="tool.params.intensity" @change="update('intensity', $event)">
-                  <option>轻微</option>
-                  <option>中等</option>
-                  <option>强烈</option>
-                </select>
-              </label>
-              <label class="creative-field">
-                <span>节奏处理</span>
-                <select :value="tool.params.variation" @change="update('variation', $event)">
-                  <option>保留原始节奏</option>
-                  <option>轻微变化</option>
-                  <option>重新编排</option>
-                </select>
-              </label>
-            </div>
-          </template>
-
-          <div
+          <section
             v-if="runnableTool && toolRun?.status === 'succeeded' && tool.type === 'lyrics'"
-            class="creative-generation-result"
+            class="block result-block"
           >
-            <div class="creative-generation-result-head">
+            <header class="result-head">
               <span>歌词生成结果</span>
-              <span>智谱文本模型</span>
-            </div>
-            <pre>{{ toolRun.content }}</pre>
-          </div>
-          <div
+              <span class="result-meta">最新一次运行</span>
+            </header>
+            <pre class="result-content">{{ toolRun.content }}</pre>
+          </section>
+          <section
             v-else-if="runnableTool && toolRun && toolRun.status !== 'running'"
-            class="creative-generation-error"
+            class="block error-block"
           >
             {{ toolRun.error ?? generationFailureText }}
-          </div>
+          </section>
         </div>
 
-        <footer class="creative-tool-config-footer">
-          <span>参数会自动保存</span>
-          <div class="creative-tool-config-actions">
-            <button type="button" class="creative-tool-save secondary" @click="saveAndClose">
-              保存参数
-            </button>
+        <footer class="panel-foot">
+          <span class="foot-hint">参数会自动保存</span>
+          <div class="foot-actions">
+            <button type="button" class="btn-secondary" @click="saveAndClose">保存参数</button>
             <button
               v-if="runnableTool"
               type="button"
-              class="creative-tool-save"
+              class="btn-primary"
               :disabled="isGenerating"
               @click="generateBlock"
             >
               {{ isGenerating ? '生成中…' : generateButtonText }}
             </button>
-            <button v-else type="button" class="creative-tool-save" @click="saveAndClose">
-              确定
-            </button>
+            <button v-else type="button" class="btn-secondary" @click="saveAndClose">完成</button>
           </div>
         </footer>
       </section>
@@ -472,157 +521,238 @@ function artMark(type: string) {
 </script>
 
 <style scoped>
-.creative-tool-panel-layer {
+/* ============ 面板骨架（暗室分层：深色底 + 细分区块） ============ */
+
+.panel-layer {
   position: absolute;
   inset: 0;
   z-index: 3;
   pointer-events: none;
 }
 
-.creative-tool-panel-layer.is-active {
+.panel-layer.is-active {
   pointer-events: none;
 }
 
-.creative-tool-config {
+.panel {
   position: absolute;
   top: 0;
   left: 18px;
-  width: min(430px, calc(100% - 36px));
+  width: min(460px, calc(100% - 36px));
   height: 100%;
   min-height: 0;
+  display: flex;
   flex-direction: column;
   pointer-events: auto;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 16px;
-  background: #151515;
+  background: linear-gradient(180deg, #131314 0%, #0f0f10 100%);
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
   overflow: hidden;
 }
 
-.creative-tool-config-head {
+.panel-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding: 22px 18px 17px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 14px;
+  padding: 20px 20px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.015);
 }
 
-.creative-tool-config-heading {
+.panel-title {
   display: flex;
   min-width: 0;
   align-items: flex-start;
-  gap: 12px;
+  gap: 13px;
 }
 
-.creative-tool-config-mark {
+.panel-mark {
   display: grid;
   flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   place-items: center;
-  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
   filter: grayscale(1);
-  font-size: 19px;
+  font-size: 22px;
 }
 
-.creative-tool-config-eyebrow {
-  color: #888;
+.panel-eyebrow {
+  color: #808085;
   font-size: 10px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.creative-tool-config h2 {
-  margin: 2px 0 3px;
-  color: #eeeeee;
-  font-size: 18px;
+.panel-title-copy h2 {
+  margin: 3px 0 4px;
+  color: #f2f2f3;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.panel-title-copy p {
+  margin: 0;
+  color: #8b8b90;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.panel-close {
+  display: grid;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: #9a9aa0 !important;
+  font-size: 15px;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease;
+}
+
+.panel-close:hover {
+  background: rgba(255, 255, 255, 0.09) !important;
+  border-color: rgba(255, 255, 255, 0.26) !important;
+  color: #fff !important;
+}
+
+.panel-body {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding: 16px 18px 18px;
+}
+
+/* ============ 区块卡片（暗室分层：卡片浮起于面板底） ============ */
+
+.block {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.012));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: #d6d6da;
+  font-size: 13px;
   font-weight: 600;
 }
 
-.creative-tool-config p {
-  margin: 0;
-  color: #7e7e7e;
+.block-head small {
+  color: #78787d;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* ============ 主要输入卡 ============ */
+
+.main-input-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: #0b0b0d;
+}
+
+.main-input-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.main-input-copy strong {
+  color: #ececf0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.main-input-copy small {
+  color: #7d7d83;
   font-size: 11px;
   line-height: 1.5;
 }
 
-.creative-tool-config-close {
+.port-mark {
+  color: #b9b9c0;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.input-status {
   flex: 0 0 auto;
-  width: 27px;
-  height: 27px;
-  border: 1px solid rgba(255, 255, 255, 0.11) !important;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
-  color: #888 !important;
-}
-
-.creative-tool-config-close:hover {
-  background: rgba(255, 255, 255, 0.07) !important;
-  color: #fff !important;
-}
-
-.creative-tool-config-body {
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
-  padding: 15px 18px;
-}
-
-.creative-tool-config-notice {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 16px;
-  padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.055);
-  color: #c4c4c4;
+  background: rgba(255, 255, 255, 0.05);
+  color: #93939a;
   font-size: 10px;
 }
 
-.creative-input-section {
-  margin-bottom: 15px;
-  padding: 11px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.025);
+.input-status.is-linked {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+  color: #e6e6ea;
 }
 
-.creative-input-section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+/* ============ 补充参考 ============ */
+
+.reference-list {
+  display: grid;
   gap: 8px;
-  margin-bottom: 9px;
-  color: #c8c8c8;
-  font-size: 11px;
-  font-weight: 600;
+  margin-bottom: 10px;
 }
 
-.creative-input-section-head small,
-.creative-main-input-card small,
-.creative-output-preview small,
-.creative-reference-copy small {
-  color: #777b84;
-  font-size: 9px;
-  font-weight: 400;
-  line-height: 1.4;
-}
-
-.creative-main-input-card,
-.creative-output-preview {
+.reference-item {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 45px;
-  padding: 8px 9px;
-  border: 1px solid rgba(96, 165, 250, 0.28);
-  border-radius: 7px;
-  background: rgba(96, 165, 250, 0.07);
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: #0b0b0d;
 }
 
-.creative-main-input-card > div,
-.creative-output-preview > div {
+.reference-type {
+  display: grid;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #c9c9cf;
+  font-size: 13px;
+}
+
+.reference-copy {
   display: flex;
   min-width: 0;
   flex: 1;
@@ -630,332 +760,359 @@ function artMark(type: string) {
   gap: 2px;
 }
 
-.creative-main-input-card strong,
-.creative-output-preview strong {
-  color: #d7e9ff;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.creative-input-port-mark,
-.creative-output-port-mark {
-  color: #72b5ff;
-  font-size: 18px;
-  line-height: 1;
-}
-
-.creative-input-status {
-  padding: 3px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #aeb9c8;
-  font-size: 8px;
-}
-
-.creative-reference-list {
-  display: grid;
-  gap: 5px;
-  margin-bottom: 8px;
-}
-
-.creative-reference-item {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  padding: 7px 8px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.045);
-}
-
-.creative-reference-type {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #d0d7e0;
-  font-size: 10px;
-}
-
-.creative-reference-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.creative-reference-copy strong {
+.reference-copy strong {
   overflow: hidden;
-  color: #cfd2d8;
-  font-size: 10px;
-  font-weight: 500;
+  color: #e2e2e6;
+  font-size: 12.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.creative-reference-remove {
-  width: 21px;
-  height: 21px;
-  flex: 0 0 auto;
-  border-radius: 4px;
-  color: #888d97 !important;
-  font-size: 15px;
+.reference-copy small {
+  color: #78787e;
+  font-size: 10.5px;
 }
 
-.creative-reference-remove:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
+.reference-remove {
+  display: grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 7px;
+  background: transparent;
+  color: #8e8e95 !important;
+  font-size: 16px;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.reference-remove:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
   color: #fff !important;
 }
 
-.creative-reference-empty {
-  margin-bottom: 8px;
-  color: #777b84;
-  font-size: 9px;
-  line-height: 1.5;
+.reference-empty {
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: #77777d;
+  font-size: 12px;
 }
 
-.creative-reference-actions {
+.reference-actions {
   display: flex;
-  gap: 6px;
+  gap: 10px;
 }
 
-.creative-reference-add {
-  display: inline-flex;
-  align-items: center;
-  min-height: 27px;
-  padding: 0 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.045);
-  color: #aeb2ba;
-  cursor: pointer;
-  font-size: 9px;
-}
-
-.creative-reference-add:hover {
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.08);
-  color: #f0f0f0;
-}
-
-.creative-reference-add input {
-  display: none;
-}
-
-.creative-text-reference-form {
+.reference-form {
   display: flex;
   align-items: flex-end;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 10px;
+  margin-top: 10px;
 }
 
-.creative-text-reference-form textarea {
-  min-width: 0;
+.reference-form textarea {
   flex: 1;
-  padding: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  border-radius: 5px;
-  outline: 0;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px solid #2c2c31;
+  border-radius: 10px;
+  outline: none;
+  background: #0a0a0c;
+  color: #efeff2;
+  font-size: 13px;
+  line-height: 1.6;
   resize: vertical;
-  background: rgba(255, 255, 255, 0.035);
-  color: #dedede;
-  font-size: 10px;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
-.creative-text-reference-form button {
-  min-height: 29px;
-  padding: 0 8px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.1) !important;
-  color: #d9d9d9 !important;
-  font-size: 9px;
+.reference-form textarea:focus {
+  border-color: #8d8d95;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
 }
 
-.creative-output-preview {
-  margin-bottom: 15px;
-  border-color: rgba(167, 139, 250, 0.3);
-  background: rgba(167, 139, 250, 0.07);
+/* ============ 参数字段：统一大控件 ============ */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
 }
 
-.creative-output-preview strong {
-  color: #e2d9ff;
+.field + .field,
+.field-row + .field,
+.field + .field-row {
+  margin-top: 12px;
 }
 
-.creative-output-port-mark {
-  color: #b8a2ff;
-}
-
-.creative-field-grid {
+.field-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.creative-field {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 13px;
+.field-label {
+  color: #c9c9cf;
+  font-size: 12.5px;
+  font-weight: 500;
 }
 
-.creative-field > span {
-  color: #a2a2a2;
-  font-size: 11px;
-}
-
-.creative-field input,
-.creative-field textarea,
-.creative-field select {
+.field-control {
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  border-radius: 6px;
-  outline: 0;
-  background: rgba(255, 255, 255, 0.035);
-  color: #e1e1e1;
-  font-size: 11px;
-  line-height: 1.5;
+  min-height: 44px;
+  padding: 11px 13px;
+  border: 1px solid #2b2b30;
+  border-radius: 10px;
+  outline: none;
+  background: #0a0a0c;
+  color: #efeff2;
+  font-size: 13.5px;
+  line-height: 1.6;
+  cursor: text;
   transition:
-    border-color 180ms ease,
-    background-color 180ms ease;
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
-.creative-field input,
-.creative-field select {
-  height: 34px;
-  padding: 0 9px;
+.field-control::placeholder {
+  color: #62626a;
 }
 
-.creative-field textarea {
-  min-height: 70px;
+.field-control:hover {
+  border-color: #3f3f46;
+  background: #0d0d10;
+}
+
+.field-control:focus,
+.field-control:focus-visible {
+  border-color: #9a9aa2;
+  background: #0e0e11;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+}
+
+.field-select {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 38px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%239a9aa0' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 12px;
+}
+
+.field-select option {
+  background: #161618;
+  color: #efeff2;
+}
+
+.field-textarea {
   resize: vertical;
-  padding: 8px 9px;
 }
 
-.creative-field input:focus,
-.creative-field textarea:focus,
-.creative-field select:focus {
-  border-color: rgba(220, 220, 220, 0.7);
-  background: rgba(255, 255, 255, 0.055);
-}
-
-.creative-file-input {
+.file-input-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 34px;
-  padding: 4px 5px 4px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.035);
-  color: #d2d2d2;
-  font-size: 11px;
+  gap: 10px;
 }
 
-.creative-file-input span {
-  min-width: 0;
+.file-input-name {
+  flex: 1;
   overflow: hidden;
+  min-height: 44px;
+  padding: 11px 13px;
+  border: 1px solid #2b2b30;
+  border-radius: 10px;
+  background: #0a0a0c;
+  color: #9c9ca3;
+  font-size: 13px;
+  line-height: 1.6;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.creative-file-input button {
-  flex: 0 0 auto;
-  padding: 4px 7px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #c2c2c2 !important;
-  font-size: 10px;
+/* ============ 输出与结果 ============ */
+
+.output-note {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.015);
 }
 
-.creative-generation-result,
-.creative-generation-error {
-  margin-top: 14px;
-  padding: 12px;
-  border: 1px solid rgba(159, 182, 222, 0.2);
-  border-radius: 8px;
-  background: rgba(159, 182, 222, 0.05);
+.output-note > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.creative-generation-result-head {
+.output-note strong {
+  color: #cfcfd4;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.output-note small {
+  color: #74747b;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.result-block {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+}
+
+.result-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  color: #cbd8ef;
-  font-size: 11px;
+  color: #e4e4e8;
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.creative-generation-result-head span:last-child {
-  color: #777f8e;
-  font-size: 9px;
+.result-meta {
+  color: #85858c;
+  font-size: 10.5px;
+  font-weight: 400;
 }
 
-.creative-generation-result pre {
-  max-height: 360px;
+.result-content {
+  max-height: 380px;
   margin: 10px 0 0;
   overflow: auto;
-  color: #d8d8d8;
+  color: #d9d9de;
   font: inherit;
-  font-size: 11px;
-  line-height: 1.75;
+  font-size: 13px;
+  line-height: 1.8;
   white-space: pre-wrap;
 }
 
-.creative-generation-error {
-  border-color: rgba(220, 170, 170, 0.22);
-  color: #d9aaaa;
-  font-size: 11px;
-  line-height: 1.6;
+.error-block {
+  border-color: rgba(220, 175, 175, 0.24);
+  background: rgba(210, 160, 160, 0.04);
+  color: #d3a9a9;
+  font-size: 12.5px;
+  line-height: 1.65;
 }
 
-.creative-tool-config-footer {
+/* ============ 按钮系统（可点区域必须一眼能认出） ============ */
+
+.panel-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 13px 18px 17px;
+  gap: 12px;
+  padding: 14px 18px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.015);
 }
 
-.creative-tool-config-footer > span {
-  color: #777;
-  font-size: 10px;
+.foot-hint {
+  color: #77777d;
+  font-size: 11.5px;
 }
 
-.creative-tool-config-actions {
+.foot-actions {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 10px;
 }
 
-.creative-tool-save.secondary {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #cfcfcf !important;
+.btn-primary,
+.btn-secondary,
+.ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 20px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 120ms ease;
 }
 
-.creative-tool-save:disabled {
+.btn-primary {
+  border: 1px solid #ececee !important;
+  background: #ececee !important;
+  color: #0d0d0f !important;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #ffffff !important;
+  transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
   cursor: wait;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
-.creative-tool-save {
-  min-width: 68px;
-  padding: 7px 13px;
-  border-radius: 6px;
-  background: #e6e6e6 !important;
-  color: #111 !important;
-  font-size: 11px;
+.btn-secondary {
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: #d9d9de !important;
 }
 
-.creative-tool-save:hover {
-  background: #fff !important;
+.btn-secondary:hover {
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #fff !important;
 }
+
+.btn-small {
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 12.5px;
+}
+
+.ghost-btn {
+  flex: 1;
+  min-height: 44px;
+  border: 1px dashed rgba(255, 255, 255, 0.18) !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+  color: #c4c4ca !important;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ghost-btn:hover {
+  border-color: rgba(255, 255, 255, 0.34) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #fff !important;
+}
+
+.ghost-btn input[type='file'] {
+  display: none;
+}
+
+.btn-inline {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
+/* ============ 面板过渡 ============ */
 
 .tool-config-enter-active,
 .tool-config-leave-active {
@@ -977,8 +1134,13 @@ function artMark(type: string) {
 }
 
 @media (max-width: 760px) {
-  .creative-tool-config {
-    width: min(100%, 320px);
+  .panel {
+    left: 12px;
+    width: min(100%, 340px);
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

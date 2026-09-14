@@ -35,8 +35,9 @@ export interface WorkflowDraftResponse {
 
 export interface WorkflowRunResponse extends WorkflowDraftResponse {
   run_id: string
-  status: WorkflowRunStatus
-  result: WorkflowDraftNode['result']
+  job_id?: string | null
+  status: WorkflowRunStatus | 'queued'
+  result?: WorkflowDraftNode['result']
   error: string | null
 }
 
