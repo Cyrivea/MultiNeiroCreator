@@ -47,8 +47,6 @@ asyncio_mode = "auto"  # 原 pytest.ini 内容，已合并到这里
 [tool.ruff]
 line-length = 110
 target-version = "py312"
-# 一次性分析脚本（如 eval_*）不参与项目质量门禁
-exclude = ["scripts"]
 
 [tool.ruff.lint]
 # 在默认基础上显式选择规则集：E/W 风格、F 逻辑错误、I 导入排序、B 常见 bug、
@@ -61,6 +59,8 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 [tool.ruff.lint.per-file-ignores]
 # 测试里的 print 是合理的调试/压测输出（pytest -s 可见），不强制走 logging
 "tests/**" = ["T20"]
+# 一次性分析脚本用 print 输出进度是设计行为；开头必须 sys.path 调整路径再导业务模块
+"scripts/**" = ["T20", "E402"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI 依赖注入惯用法：默认参数里调用 Depends()/Query()/File() 是框架设计，不是 B008 要抓的 bug
