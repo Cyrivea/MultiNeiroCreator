@@ -1,0 +1,47 @@
+{
+  "meta": {
+    "model": "glm-4-flash",
+    "dry_run": true,
+    "case_count": 2,
+    "pass_count": 0,
+    "pass_rate": 0.0
+  },
+  "cases": [
+    {
+      "name": "串联：歌词→曲绘",
+      "attempt": 1,
+      "user": "写个失恋主题的歌词，再根据歌词内容串联生成一张曲绘",
+      "ok": false,
+      "errors": [
+        "序列不符，期望按序包含 ['configure_lyrics_workflow', 'configure_image_workflow', 'run_current_workflow']，实际为 ['configure_lyrics_workflow']",
+        "图像节点未被串联（实际 edges=[{'source': 'workflow-input', 'target': 'workflow-node-lyrics-0001'}, {'source': 'workflow-node-lyrics-0001', 'target': 'workflow-output'}]）"
+      ],
+      "calls": [
+        [
+          "configure_lyrics_workflow",
+          null
+        ]
+      ],
+      "reply": "[dry]完成",
+      "duration_ms": 0.0
+    },
+    {
+      "name": "串联（先 A 后 B 口吻）",
+      "attempt": 1,
+      "user": "先帮我写段副歌歌词，写完直接拿去做封面图",
+      "ok": false,
+      "errors": [
+        "序列不符，期望按序包含 ['configure_lyrics_workflow', 'configure_image_workflow', 'run_current_workflow']，实际为 ['configure_lyrics_workflow']",
+        "图像节点未被串联（实际 edges=[{'source': 'workflow-input', 'target': 'workflow-node-lyrics-0001'}, {'source': 'workflow-node-lyrics-0001', 'target': 'workflow-output'}]）"
+      ],
+      "calls": [
+        [
+          "configure_lyrics_workflow",
+          null
+        ]
+      ],
+      "reply": "[dry]完成",
+      "duration_ms": 0.0
+    }
+  ]
+}
