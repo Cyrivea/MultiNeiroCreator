@@ -58,11 +58,10 @@ async def execute_tool(func_name: str, func_args_raw: str) -> ToolOutcome:
     started = time.perf_counter()
     try:
         if func_name in capability_map:
-            # Agent 请求上下文由编排器通过 Capability Runtime 的 ContextVar 绑定；
-            # 它不会混进模型可见的工具参数。
+
             result = await tools_map[func_name].ainvoke(func_args)
         else:
-            # 同步工具（如联网搜索可阻塞 5s+）必须丢线程池，否则阻塞事件循环拖死其他用户的 SSE。
+
             result = await asyncio.to_thread(tools_map[func_name].invoke, func_args)
     except Exception as exc:
         logger.exception(
