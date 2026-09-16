@@ -7,6 +7,9 @@ import { useWorkflowStore, WORKFLOW_INPUT_ID, WORKFLOW_OUTPUT_ID } from '@/store
 import type { WorkflowDraft } from '@/serve/workflow'
 
 // store 的服务器同步链会引入 element-plus，本测试不验证网络调用，统一 mock 掉
+vi.mock('@/utils/toast', () => ({
+  ElMessage: { warning: vi.fn(), error: vi.fn(), success: vi.fn() },
+}))
 vi.mock('@/serve/workflow', () => ({
   getWorkflowDraft: vi.fn(),
   saveWorkflowDraft: vi.fn(),

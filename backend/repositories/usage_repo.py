@@ -29,9 +29,12 @@ def insert(
 ) -> dict[str, Any]:
     with db_connection() as conn:
         conn.row_factory = sqlite3.Row
+        # 占位符数量必须由列清单推导——手写常数在列变动后会静默错位（实测
+        # 生产上 '13 values for 12 columns'，账本一行都没写进去）。
+        insert_columns = _COLUMNS.removeprefix("id, ")
+        placeholders = ", ".join("?" for _ in insert_columns.split(","))
         cursor = conn.execute(
-            f"INSERT INTO usage_events ({_COLUMNS.removeprefix('id, ')}) VALUES "
-            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            f"INSERT INTO usage_events ({insert_columns}) VALUES ({placeholders})",
             (
                 user_id,
                 project_id,

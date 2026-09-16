@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from agents.tools.registry import capability_map, tools_map
 from core import config
+from core.exceptions import AppError
 
 logger = logging.getLogger("assistant")
 
@@ -83,6 +84,15 @@ async def execute_tool(func_name: str, func_args_raw: str) -> ToolOutcome:
             "请明确告诉用户本次操作超时、请稍后重试或换个问法。",
             ok=False,
         )
+    except AppError as exc:
+        # 业务拒绝（如“引用上游却没连线”）：detail 是给模型的可执行纠正指令，
+        # 不能吞掉改成笼统的“失败了重试”——模型看不到原因只会摊手或乱猜。
+        logger.info(
+            "工具被业务规则拒绝: %s",
+            func_name,
+            extra={"evt": "tool_rejected_business", "tool": func_name, "detail": exc.detail},
+        )
+        return ToolOutcome(result=f"操作被平台规则拒绝：{exc.detail}", ok=False)
     except Exception as exc:
         logger.exception(
             "工具执行失败: %s",

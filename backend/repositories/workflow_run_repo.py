@@ -177,8 +177,10 @@ def finish_step(
 def list_steps(user_id: int, run_id: str) -> list[dict[str, Any]]:
     with db_connection() as conn:
         conn.row_factory = sqlite3.Row
+        # 注意是 ", ".join：直接 "s.".join 会拼出 "s.ids.run_id" 这类坏 SQL（实测 500）
+        step_columns = ", ".join(f"s.{col.strip()}" for col in _STEP_COLUMNS.split(","))
         rows = conn.execute(
-            "SELECT s." + "s.".join(_STEP_COLUMNS.split(", ")) + " FROM workflow_steps s "
+            f"SELECT {step_columns} FROM workflow_steps s "
             "JOIN workflow_runs r ON r.id = s.run_id "
             "WHERE s.run_id=? AND r.user_id=? ORDER BY s.created_at ASC",
             (run_id, user_id),

@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import type { CreativeToolInstance, CreativeToolType } from './creativeTools'
 import { useCreativeToolsStore } from './creativeTools'
 import { useToolRunsStore, type ToolRunStatus } from './toolRuns'
+import { ElMessage } from '@/utils/toast'
 import {
   getWorkflowDraft,
   saveWorkflowDraft,
@@ -260,6 +261,16 @@ export const useWorkflowStore = defineStore('workflow', () => {
       const endpointNodes = rawNodes.filter((node) => node.kind === 'endpoint')
       const toolNodes = rawNodes.filter((node) => node.kind !== 'endpoint')
       bridgeServerManagedNodes(toolNodes)
+      // 幻影 Block 对账：助手快照才是画布的唯一事实来源。
+      // 曾经桥接过、但本快照里已没有对应节点的 assistant-* 实例是孤儿（例如助手
+      // 中途 clear 又重建），留在左侧列表会造成“工具数量与画布节点不对等”。
+      const creativeToolsStore = useCreativeToolsStore()
+      const aliveToolIds = new Set(toolNodes.map((node) => String(node.toolId ?? node.id)))
+      for (const instance of [...creativeToolsStore.instances]) {
+        if (instance.id.startsWith('assistant-') && !aliveToolIds.has(instance.id)) {
+          creativeToolsStore.removeTool(instance.id)
+        }
+      }
       const nextEndpointPositions: Partial<Record<WorkflowEndpoint, WorkflowEndpointPosition>> = {}
       for (const endpointNode of endpointNodes) {
         if (endpointNode.endpoint === 'input' || endpointNode.endpoint === 'output') {
@@ -382,8 +393,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
         isApplyingRemote.value = false
       }
     } catch (error) {
-      // 409：服务器已有更新的 Draft（例如 AI 先改了），拉取最新版避免覆盖
-      const status = (error as { response?: { status?: number } }).response?.status
+      // 409：服务器已有更新的 Draft（例如 AI 先改了），拉取最新版避免覆盖；
+      // B19 修订：运行中被拒（WORKFLOW_BUSY）必须告诉用户原因而不是静默回弹，
+      // 否则用户会以为画布“卡了”。
+      const errObj = error as { response?: { status?: number; data?: { detail?: unknown } } }
+      const status = errObj.response?.status
+      const detail = errObj.response?.data?.detail
+      if (status === 409 && typeof detail === 'string' && detail.includes('WORKFLOW_BUSY')) {
+        ElMessage.warning(detail.replace('WORKFLOW_BUSY：', ''))
+      }
       if (status === 409) await refreshFromServer(currentProjectId.value)
     }
   }

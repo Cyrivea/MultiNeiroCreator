@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -127,7 +128,8 @@ def save_draft(
         raise AppError("Workflow 已被其他操作更新，请刷新后重试", status_code=409)
     # 运行期间禁止外部编辑：运行快照回写与用户写入并存会互相踩掉对方。
     # 前端有只读锁，这里是兜底；错误码 WORKFLOW_BUSY 供前端区分友好提示。
-    if workflow_run_repo.find_active_for_workflow(user_id, current["id"]) is not None:
+    # get_active_run 带自愈：job 已终局的僵尸运行会被顺手收尸，不会永远锁住画布。
+    if get_active_run(user_id, current["id"]) is not None:
         raise AppError(
             "WORKFLOW_BUSY：Workflow 正在运行，运行结束后会自动解锁，请稍后再编辑",
             status_code=409,
@@ -225,6 +227,7 @@ def configure_capability(
     meta = CAPABILITY_META.get(capability_id)
     if meta is None:
         raise AppError(f"未知的生产能力: {capability_id}")
+    params, referenced_upstream = _normalize_upstream_refs(params)
 
     current = get_draft(user_id, project_id)
     draft = current["draft"]
@@ -266,6 +269,18 @@ def configure_capability(
     node["runStatus"] = "idle"
     node["result"] = None
     _wire_node(draft, node["id"], upstream_node_id)
+    if referenced_upstream:
+        inbound = [
+            edge
+            for edge in draft.get("edges", [])
+            if edge.get("target") == node["id"] and edge.get("source") != INPUT_ID
+        ]
+        if not inbound:
+            raise AppError(
+                "检测到参数引用了上游结果，但该节点没有任何上游连线，运行时无法取到歌词。"
+                "请先调用 read_workflow_state 读画布，再用 upstream_node_id=上游节点 id 串联后重试。",
+                status_code=422,
+            )
     revision = current["revision"] + 1
     saved = workflow_repo.upsert(user_id, project_id, revision, draft, _now())
     return {"id": saved["id"], "revision": revision, "draft": draft, "node_id": node["id"]}
@@ -340,6 +355,21 @@ def _execution_order(draft: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 UPSTREAM_RESULT_PATTERN = "${upstream.result.content}"
+# 模型会发明各种上游引用写法（如 ${workflow-node-xxx.result.content}）；
+# 一律归一化为上面的规范形态，且在配置期必须看到真的有上游连线。
+UPSTREAM_REF_RE = re.compile(r"\$\{[^}]*?\.result\.content\}")
+
+
+def _normalize_upstream_refs(params: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """把任意 `${xxx.result.content}` 写法统一为规范引用；返回（新参数, 是否引用了上游）。"""
+    normalized: dict[str, Any] = {}
+    referenced = False
+    for key, value in params.items():
+        if isinstance(value, str) and UPSTREAM_REF_RE.search(value):
+            referenced = True
+            value = UPSTREAM_REF_RE.sub(UPSTREAM_RESULT_PATTERN, value)
+        normalized[key] = value
+    return normalized, referenced
 
 
 def _upstream_content(upstream_node: dict[str, Any]) -> str | None:
@@ -415,13 +445,16 @@ def _resolve_params(
         upstream_content = _upstream_content(upstream_node)
 
     params = node.get("params") or {}
-    needs_reference = any(UPSTREAM_RESULT_PATTERN in str(value) for value in params.values())
+    # 容忍历史/模型自造的引用形态（如 ${workflow-node-xxx.result.content}），统一按上游引用处理
+    needs_reference = any(
+        UPSTREAM_REF_RE.search(str(value)) for value in params.values()
+    )
     if needs_reference and not upstream_content:
         return params, "上游已产出多个版本，请先在其中选一个，再运行当前节点"
     resolved: dict[str, Any] = {}
     for key, value in params.items():
         if isinstance(value, str) and upstream_content:
-            resolved[key] = value.replace(UPSTREAM_RESULT_PATTERN, upstream_content)
+            resolved[key] = UPSTREAM_REF_RE.sub(upstream_content, value)
         else:
             resolved[key] = value
     return resolved, None
@@ -500,6 +533,36 @@ async def run_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
     }
 
 
+# ---------- 活跃运行判定（带自愈） ----------
+
+_JOB_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled"}
+
+
+def get_active_run(user_id: int, workflow_id: int | None) -> dict[str, Any] | None:
+    """返回真正活着的运行；关联 job 已终局（失败/取消/成功）的 running/queued 记录
+    是僵尸（例如用户取消 job、Worker 崩溃），顺手收尸并返回 None——
+    防止画布编辑锁被一个永远等不回来的运行永久顶住。"""
+    run = workflow_run_repo.find_active_for_workflow(user_id, workflow_id)
+    if run is None:
+        return None
+    job_id = run.get("job_id")
+    if not job_id:
+        return run
+    try:
+        job = job_service.get_job(user_id, str(job_id))
+    except Exception:
+        return run  # job 查不到不猜，保守保持锁定
+    if job["status"] in _JOB_TERMINAL_STATUSES:
+        finalize_failed_run(
+            user_id,
+            run.get("project_id"),
+            run["id"],
+            f"关联任务已{job['status']}，运行自动清理",
+        )
+        return None
+    return run
+
+
 # ---------- 运行状态查询（Assistant 进度查询工具与前端进度面板共用） ----------
 
 
@@ -561,7 +624,7 @@ def submit_workflow_run(user_id: int, project_id: int | None) -> dict[str, Any]:
     current = get_draft(user_id, project_id)
     # 防重复提交：已有 queued/running 运行时拒绝，双跑会互相覆盖候选与状态。
     # 与保存编辑同一错误码，前端/助手读到都先查进度再决定动作。
-    if workflow_run_repo.find_active_for_workflow(user_id, current["id"]) is not None:
+    if get_active_run(user_id, current["id"]) is not None:
         raise AppError(
             "WORKFLOW_BUSY：已有 Workflow 正在运行，请先查询进度或等待其结束",
             status_code=409,

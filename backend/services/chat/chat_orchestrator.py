@@ -300,6 +300,20 @@ async def _orchestrate(
 
     tool_used = tools_used[-1] if tools_used else None
 
+    # 空气泡根治：模型调完工具后可能最终一个字也不说（实测线上历史出现
+    # content="" 的 assistant 消息，前端显示成永久空白气泡）。
+    # 为空时合成一句明确的话术，让用户知道发生了什么、成果在哪里。
+    if not reply.strip():
+        if tools_used:
+            action_list = "、".join(dict.fromkeys(tools_used))
+            reply = (
+                f"本轮已调用 {action_list} 完成画布操作。生成结果在工作区画布的节点上，"
+                "可随时追问进度。"
+            )
+        else:
+            reply = "这次没有得到可输出的内容，请换个说法再试一次。"
+        yield _sse({"type": "content", "content": reply})
+
     clean_history = ctx.clean_history
     await asyncio.to_thread(
         append_message,

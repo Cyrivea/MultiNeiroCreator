@@ -7,7 +7,7 @@
 
   <TransitionGroup v-else name="agent-message-float" tag="div" class="agent-message-list">
     <div
-      v-for="message in chatStore.messages"
+      v-for="message in visibleMessages"
       :key="message.id"
       class="agent-message"
       :class="[`is-${message.role}`, { 'is-error': message.isError }]"
@@ -75,10 +75,26 @@
 
 <script setup lang="ts">
 // 消息列表（D1 拆分第 7 步，todo §8.4）：纯展示，数据来自 chat store。
+import { computed } from 'vue'
 import { formatToolName, useChatStore } from '@/stores/chat'
 
 const chatStore = useChatStore()
 const thinkingLetters = 'THINKING'.split('')
+
+// 空气泡防御：历史里可能存在早期遗留的空 assistant 消息（模型只调工具未说话的年代），
+// 已读过且既无内容又无工具标记的一律不渲染。
+const visibleMessages = computed(() =>
+  chatStore.messages.filter(
+    (message) =>
+      !(
+        message.role === 'assistant' &&
+        !message.isPending &&
+        !message.isError &&
+        !message.content?.trim() &&
+        !message.toolName
+      ),
+  ),
+)
 </script>
 
 <style scoped>
