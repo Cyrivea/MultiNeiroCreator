@@ -148,6 +148,53 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+_TOOL_DISPLAY_NAMES = {
+    "configure_lyrics_workflow": "配置歌词节点",
+    "configure_image_workflow": "配置图像节点",
+    "run_current_workflow": "运行工作流",
+    "clear_workflow_draft": "清空画布",
+    "read_workflow_state": "读取画布",
+    "get_workflow_run_status": "查询运行状态",
+    "search_web": "联网搜索",
+    "calculate": "计算",
+    "get_current_time": "查询时间",
+    "generate_lyrics_block": "生成歌词",
+}
+
+
+def _summarize_tool_outcome(tool_name: str, outcome, model_result: str) -> dict:
+    """把一张 ToolOutcome 缩成回执可用的一行：中文动作名 + 成败 + 原因。"""
+    summary = model_result
+    try:
+        payload = json.loads(model_result)
+        if isinstance(payload, dict):
+            summary = payload.get("message") or payload.get("error") or payload.get("status") or model_result
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return {
+        "name": tool_name,
+        "label": _TOOL_DISPLAY_NAMES.get(tool_name, tool_name),
+        "ok": outcome.ok,
+        "summary": str(summary)[:160],
+    }
+
+
+def _compose_action_receipt(tool_outcomes: list[dict]) -> str:
+    """模型没说话时的兜底第十三条：逐条列出本轮动作的真实成败，不抵赖。"""
+    if not tool_outcomes:
+        return "这次没有得到可输出的内容，请换个说法再试一次。"
+    lines: list[str] = []
+    for item in tool_outcomes:
+        mark = "✓" if item["ok"] else "✗"
+        lines.append(f"{mark} {item['label']}：{item['summary']}")
+    failed = [item for item in tool_outcomes if not item["ok"]]
+    if failed:
+        tail = "部分内容未能完成，失败原因已按条列出；可以让我重试或调整需求。"
+    else:
+        tail = "生成结果展示在工作区画布的节点上，可随时追问进度。"
+    return "本轮操作回执：\n" + "\n".join(lines) + "\n" + tail
+
+
 async def stream_chat(
     user: dict,
     message: str,
@@ -196,6 +243,8 @@ async def _orchestrate(
 
     reply = ""
     tools_used: list[str] = []
+    # 真实回执需要“谁成谁败”：记录每次工具调用的结果单摘要
+    tool_outcomes: list[dict] = []
     tool_rounds = 0
     llm_started = time.perf_counter()
     first_token_at: float | None = None
@@ -296,22 +345,17 @@ async def _orchestrate(
             for ui_event in ui_events:
                 yield _sse(ui_event)
             tools_used.append(call["name"])
+            tool_outcomes.append(_summarize_tool_outcome(call["name"], outcome, model_result))
             messages.append({"role": "tool", "content": model_result, "tool_call_id": call["id"]})
 
     tool_used = tools_used[-1] if tools_used else None
 
     # 空气泡根治：模型调完工具后可能最终一个字也不说（实测线上历史出现
     # content="" 的 assistant 消息，前端显示成永久空白气泡）。
-    # 为空时合成一句明确的话术，让用户知道发生了什么、成果在哪里。
+    # 为空时合成“诚实的回执”：谁成了、谁败了、为什么，绝不能把被拒的调用
+    # 伪装成已执行（用户实测：回执自称调用了图像配置，画布上根本没有节点）。
     if not reply.strip():
-        if tools_used:
-            action_list = "、".join(dict.fromkeys(tools_used))
-            reply = (
-                f"本轮已调用 {action_list} 完成画布操作。生成结果在工作区画布的节点上，"
-                "可随时追问进度。"
-            )
-        else:
-            reply = "这次没有得到可输出的内容，请换个说法再试一次。"
+        reply = _compose_action_receipt(tool_outcomes)
         yield _sse({"type": "content", "content": reply})
 
     clean_history = ctx.clean_history

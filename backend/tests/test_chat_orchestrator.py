@@ -327,3 +327,23 @@ def test_incomplete_textual_tool_prefix_remains_normal_content(monkeypatch, pers
 
     content = "".join(event["content"] for event in events_of(events, "content"))
     assert content == "search_web 暂时不可用"
+
+
+def test_receipt_marks_rejected_tools_honestly():
+    """空回复兜底回执必须讲真话：被拒的调用不能被写成'已完成'。"""
+    from services.chat.chat_orchestrator import _compose_action_receipt
+
+    outcomes = [
+        {"name": "configure_lyrics_workflow", "label": "配置歌词节点", "ok": True, "summary": "已配置"},
+        {"name": "configure_image_workflow", "label": "配置图像节点", "ok": False, "summary": "引用上游但没连线"},
+    ]
+    receipt = _compose_action_receipt(outcomes)
+    assert "✗ 配置图像节点" in receipt
+    assert "引用上游" in receipt
+    assert "未能完成" in receipt
+
+
+def test_receipt_empty_tools_falls_back():
+    from services.chat.chat_orchestrator import _compose_action_receipt
+
+    assert "换个说法" in _compose_action_receipt([])

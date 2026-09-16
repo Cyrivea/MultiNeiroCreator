@@ -230,6 +230,14 @@ def configure_capability(
     params, referenced_upstream = _normalize_upstream_refs(params)
 
     current = get_draft(user_id, project_id)
+    # 运行期间不允许增改拓扑：运行中的节点状态回写和配置变更会互相踩，
+    # 竞态还会造成同能力节点重复入库（实测出双图像节点）。先查进度等运行结束。
+    if get_active_run(user_id, current["id"]) is not None:
+        raise AppError(
+            "WORKFLOW_BUSY：画布正在运行，不能在此期间增改节点。"
+            "请先调用 get_workflow_run_status 查状态，等运行结束后再配置。",
+            status_code=409,
+        )
     draft = current["draft"]
     nodes = draft.get("nodes", [])
     # 同 capability 只保留一个实例：多余的连同连接线一起清除，避免并联残留

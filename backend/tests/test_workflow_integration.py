@@ -122,6 +122,26 @@ def test_configure_rejects_upstream_ref_without_wiring(real_db):
     assert "串联" in exc.value.detail or "上游" in exc.value.detail
 
 
+def test_configure_rejected_while_run_active(real_db):
+    """运行期间不许增改拓扑（竞态会重复入库，实测出现双图像节点）。"""
+    from core.exceptions import AppError
+
+    user = 905
+    _create_user(user)
+    _configure_lyrics(user)
+    submission = submit_workflow_run(user, None)  # 入队后 run 为 queued=活跃
+
+    with pytest.raises(AppError) as exc:
+        workflow_service.configure_image(user, None, {"prompt": "出图", "style": "电影概念艺术"})
+    assert exc.value.status_code == 409
+    assert "WORKFLOW_BUSY" in exc.value.detail
+
+    # 运行结束后恢复可配置
+    finalize_failed_run(user, None, submission["run_id"], "测试清理")
+    image = workflow_service.configure_image(user, None, {"prompt": "出图", "style": "电影概念艺术"})
+    assert image["draft"]["nodes"]
+
+
 def test_usage_ledger_insert_roundtrip(real_db):
     """用量账本占位符/列清单一致性：曾在生产上 '13 values for 12 columns' 静默丢账。"""
     from repositories import usage_repo
