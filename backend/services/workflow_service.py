@@ -15,6 +15,7 @@ from typing import Any
 
 from core.exceptions import AppError
 from repositories import workflow_repo, workflow_run_repo
+from schemas.capability import CapabilityResult
 from services import job_service
 from services.capabilities import CAPABILITY_REGISTRY, CapabilityContext, run_capability
 from services.project_service import get_project
@@ -305,12 +306,61 @@ def _execution_order(draft: dict[str, Any]) -> list[dict[str, Any]]:
 UPSTREAM_RESULT_PATTERN = "${upstream.result.content}"
 
 
-def _resolve_params(node: dict[str, Any], draft: dict[str, Any], results: dict[str, Any]) -> dict[str, Any]:
-    """把参数里的 ``${upstream.result.content}`` 替换为直接上游节点的输出。
+def _upstream_content(upstream_node: dict[str, Any]) -> str | None:
+    """抽取上游节点“要送到下游的内容”，严格按“多版本必须手选”规则：
 
-    没有上游产物时保留原文，让能力自己决定是否缺参数；这样串联链路是数据流，
-    不只是画布上的连线。
+    1. 有 selectedCandidateId：只认它，找不到对应的成功版本就算不可用；
+    2. 只有一个成功版本：直接用它；
+    3. 多个成功版本但没选定：返回 None，下游节点报“先选版本”。
     """
+    candidates = upstream_node.get("candidates")
+    if not isinstance(candidates, list):
+        return None
+    selected_id = upstream_node.get("selectedCandidateId")
+    if selected_id:
+        for cand in candidates:
+            if cand.get("id") == selected_id and cand.get("status") == "succeeded":
+                return cand.get("content")
+        return None
+    succeeded = [
+        cand
+        for cand in candidates
+        if cand.get("status") == "succeeded" and isinstance(cand.get("content"), str)
+    ]
+    if len(succeeded) == 1:
+        return succeeded[0].get("content")
+    return None
+
+
+
+
+def _failure_result(capability_id: str, message: str):
+    return CapabilityResult(capability_id=capability_id, status="failed", error=message)
+
+
+def _append_candidate(node: dict[str, Any], result: Any) -> None:
+    """运行成功/失败都留一条候选记录；单一成功默认成下游的输入。"""
+    content = result.result.get("content") if isinstance(result.result, dict) else None
+    candidates = node.setdefault("candidates", [])
+    candidates.append(
+        {
+            "id": f"cand-{uuid.uuid4().hex[:8]}",
+            "status": result.status,
+            "content": content,
+            "error": result.error,
+            "created_at": _now(),
+        }
+    )
+    if result.status == "succeeded":
+        succeeded = [c for c in candidates if c.get("status") == "succeeded"]
+        if len(succeeded) == 1:
+            node["selectedCandidateId"] = succeeded[0]["id"]
+
+
+def _resolve_params(
+    node: dict[str, Any], draft: dict[str, Any], results: dict[str, Any]
+) -> tuple[dict[str, Any], str | None]:
+    """替换 ``${upstream.result.content}``；多版本上游未选择时拒绝执行而不是盲跑。"""
     node_id = str(node.get("id", ""))
     upstream_id = next(
         (
@@ -320,15 +370,25 @@ def _resolve_params(node: dict[str, Any], draft: dict[str, Any], results: dict[s
         ),
         None,
     )
+    upstream_node = next(
+        (item for item in draft.get("nodes", []) if str(item.get("id")) == upstream_id),
+        None,
+    )
     upstream_content = (results.get(upstream_id) or {}).get("content") if upstream_id else None
+    if upstream_content is None and upstream_node is not None:
+        upstream_content = _upstream_content(upstream_node)
+
     params = node.get("params") or {}
+    needs_reference = any(UPSTREAM_RESULT_PATTERN in str(value) for value in params.values())
+    if needs_reference and not upstream_content:
+        return params, "上游已产出多个版本，请先在其中选一个，再运行当前节点"
     resolved: dict[str, Any] = {}
     for key, value in params.items():
         if isinstance(value, str) and upstream_content:
             resolved[key] = value.replace(UPSTREAM_RESULT_PATTERN, upstream_content)
         else:
             resolved[key] = value
-    return resolved
+    return resolved, None
 
 
 async def run_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
@@ -356,7 +416,16 @@ async def run_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
     node_results: dict[str, dict[str, Any]] = {}
     for node in ordered:
         capability_id = node["capability_id"]
-        resolved_params = _resolve_params(node, draft, node_results)
+        resolved_params, params_error = _resolve_params(node, draft, node_results)
+        if params_error:
+            node["resolved_params"] = resolved_params
+            node["runStatus"] = "failed"
+            node["result"] = None
+            node["error"] = params_error
+            first_error = first_error or f"{node.get('name')}: {params_error}"
+            final_status = "failed"
+            _append_candidate(node, _failure_result(capability_id, params_error))
+            continue
         result = await run_capability(
             capability_id,
             resolved_params,
@@ -366,6 +435,7 @@ async def run_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
         node["runStatus"] = result.status
         node["result"] = result.result
         node["error"] = result.error
+        _append_candidate(node, result)
         if result.result and result.result.get("content") is not None:
             node_results[node["id"]] = result.result
         if result.status != "succeeded":
@@ -377,10 +447,8 @@ async def run_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
     for node in ordered:
         latest_node = latest_by_id.get(node["id"])
         if latest_node is not None:
-            latest_node["runStatus"] = node["runStatus"]
-            latest_node["result"] = node["result"]
-            latest_node["error"] = node["error"]
-            latest_node["resolved_params"] = node.get("resolved_params")
+            for key in ("runStatus", "result", "error", "resolved_params", "candidates", "selectedCandidateId"):
+                latest_node[key] = node.get(key)
 
     final_saved = await asyncio.to_thread(
         workflow_repo.upsert, user_id, project_id, latest["revision"] + 1, latest["draft"], _now()
@@ -469,7 +537,7 @@ async def _execute_snapshot_run(
     live_by_id = {n.get("id"): n for n in live_draft.get("nodes", [])}
 
     for node in ordered:
-        resolved_params = _resolve_params(node, draft_snapshot, node_outputs)
+        resolved_params, params_error = _resolve_params(node, draft_snapshot, node_outputs)
         step = workflow_run_repo.create_step(
             step_id=f"step-{uuid.uuid4().hex[:12]}",
             run_id=run_id,
@@ -478,6 +546,17 @@ async def _execute_snapshot_run(
             input_payload=resolved_params,
             created_at=_now(),
         )
+        if params_error:
+            workflow_run_repo.finish_step(step["id"], "failed", None, params_error)
+            live_node = live_by_id.get(node["id"])
+            if live_node is not None:
+                live_node["runStatus"] = "failed"
+                live_node["result"] = None
+                live_node["error"] = params_error
+                live_node["resolved_params"] = resolved_params
+            first_error = first_error or f"{node.get('name')}: {params_error}"
+            final_status = "failed"
+            continue
         result = await run_capability(
             node["capability_id"],
             resolved_params,
@@ -495,6 +574,7 @@ async def _execute_snapshot_run(
             live_node["result"] = result.result
             live_node["error"] = result.error
             live_node["resolved_params"] = resolved_params
+            _append_candidate(live_node, result)
             await asyncio.to_thread(
                 workflow_repo.upsert,
                 user_id,

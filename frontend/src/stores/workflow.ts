@@ -7,11 +7,14 @@ import {
   getWorkflowDraft,
   saveWorkflowDraft,
   runWorkflow,
+  type WorkflowCandidate,
   type WorkflowDraft,
   type WorkflowDraftNode,
   type WorkflowDraftResponse,
 } from '@/serve/workflow'
 import { waitForAgentJob } from '@/serve/agent'
+
+export type { WorkflowCandidate } from '@/serve/workflow'
 
 export type WorkflowCanvasMode = 'select' | 'pan'
 export type WorkflowEndpoint = 'input' | 'output'
@@ -35,6 +38,9 @@ export interface WorkflowNode {
   runStatus?: ToolRunStatus
   result?: { format?: string; content?: string } | null
   error?: string | null
+  /** 每次成功/失败运行追加一条候选，下游需要多版本时必须手动选定 */
+  candidates?: WorkflowCandidate[]
+  selectedCandidateId?: string | null
 }
 
 export interface WorkflowEdge {
@@ -62,6 +68,9 @@ function cloneNodes(nodes: WorkflowNode[]) {
       : node.result === undefined
         ? {}
         : { result: null }),
+    ...(node.candidates
+      ? { candidates: node.candidates.map((candidate) => ({ ...candidate })) }
+      : {}),
   }))
 }
 
@@ -175,6 +184,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
       runStatus: node.runStatus,
       result: node.result ?? null,
       error: node.error ?? null,
+      candidates: node.candidates ?? [],
+      selectedCandidateId: node.selectedCandidateId ?? null,
     }))
     const inputPosition = endpointPositions.value.input ?? { x: 36, y: 280 }
     const maxX = Math.max(1120, ...nodes.value.map((node) => node.x + 236))
@@ -268,6 +279,16 @@ export const useWorkflowStore = defineStore('workflow', () => {
           runStatus: node.runStatus,
           result: node.result ?? null,
           error: node.error ?? null,
+          candidates: Array.isArray(node.candidates)
+            ? node.candidates.map((candidate): WorkflowCandidate => ({
+                id: String(candidate.id),
+                status: candidate.status as WorkflowCandidate['status'],
+                content: candidate.content ?? null,
+                error: candidate.error ?? null,
+                created_at: candidate.created_at,
+              }))
+            : [],
+          selectedCandidateId: node.selectedCandidateId ?? null,
         }))
         .filter((node) => node.id)
       edges.value = Array.isArray(draft.edges) ? cloneEdges(draft.edges) : []
@@ -595,6 +616,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (node) removeNode(node.id)
   }
 
+  /** 在多版本里指定下游引用哪一条（一次只能有一个） */
+  function selectCandidate(nodeId: string, candidateId: string) {
+    const node = nodes.value.find((item) => item.id === nodeId)
+    if (!node) return
+    node.selectedCandidateId = candidateId
+    persist()
+  }
+
   function deleteSelected() {
     removeNodes(selectedNodeIds.value)
   }
@@ -718,6 +747,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     removeNodes,
     removeNodeByToolId,
     deleteSelected,
+    selectCandidate,
     addConnection,
     removeConnection,
     undo,

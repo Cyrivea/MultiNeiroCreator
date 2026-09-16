@@ -326,6 +326,36 @@
             </div>
           </div>
 
+          <section v-if="candidates.length" class="block candidate-block">
+            <header class="candidate-head">
+              <span>候选版本</span>
+              <small>手动选定一张，下游节点才会用它</small>
+            </header>
+            <div
+              v-for="candidate in [...candidates].reverse()"
+              :key="candidate.id"
+              class="candidate-item"
+              :class="{ 'is-selected': candidate.id === selectedCandidateId }"
+            >
+              <div class="candidate-top">
+                <span class="candidate-status" :class="`is-${candidate.status}`">
+                  {{ candidateStatusLabel(candidate.status) }}
+                </span>
+                <button
+                  type="button"
+                  class="candidate-select ghost-btn"
+                  :disabled="candidate.id === selectedCandidateId"
+                  @click="selectCandidate(candidate.id)"
+                >
+                  {{ candidate.id === selectedCandidateId ? '正在使用' : '用作下游输入' }}
+                </button>
+              </div>
+              <pre class="candidate-snippet">{{
+                candidate.content ? preview(candidate.content) : candidate.error || '未生成'
+              }}</pre>
+            </div>
+          </section>
+
           <section
             v-if="runnableTool && toolRun?.status === 'succeeded' && tool.type === 'lyrics'"
             class="block result-block"
@@ -394,6 +424,11 @@ const mainInputSource = computed(() => {
   if (edge.source === WORKFLOW_INPUT_ID) return '输入节点'
   return workflowStore.nodes.find((node) => node.id === edge.source)?.name ?? '上一步工具'
 })
+const currentNode = computed(() =>
+  tool.value ? (workflowStore.nodes.find((node) => node.toolId === tool.value!.id) ?? null) : null,
+)
+const candidates = computed(() => currentNode.value?.candidates ?? [])
+const selectedCandidateId = computed(() => currentNode.value?.selectedCandidateId ?? null)
 const mainInputLabel = computed(() => mainInputSource.value ?? '等待连接')
 const mainInputDetail = computed(() =>
   mainInputSource.value
@@ -419,6 +454,20 @@ function update(key: string, event: Event) {
 
 function updateValue(key: string, value: string) {
   if (tool.value) creativeToolsStore.updateParam(tool.value.id, key, value)
+}
+
+function candidateStatusLabel(status: string) {
+  return status === 'succeeded' ? '成功' : status === 'failed' ? '失败' : '待配置'
+}
+
+function preview(content: string) {
+  return content.length > 280 ? `${content.slice(0, 280)}…` : content
+}
+
+function selectCandidate(candidateId: string) {
+  if (!currentNode.value) return
+  workflowStore.selectCandidate(currentNode.value.id, candidateId)
+  ElMessage.success('已指定作为下游输入')
 }
 
 function mainInputHint(type: string) {
@@ -999,6 +1048,91 @@ function artMark(type: string) {
   font: inherit;
   font-size: 13px;
   line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+/* ============ 候选版本 ============ */
+
+.candidate-block {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.candidate-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: #d6d6da;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.candidate-head small {
+  color: #78787d;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.candidate-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 10px;
+  background: #0b0b0d;
+}
+
+.candidate-item.is-selected {
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.candidate-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.candidate-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #b7b7bd;
+  font-size: 10.5px;
+}
+
+.candidate-status.is-succeeded {
+  border-color: rgba(255, 255, 255, 0.26);
+  color: #e6e6ea;
+}
+
+.candidate-status.is-failed {
+  border-color: rgba(220, 175, 175, 0.3);
+  color: #cba8a8;
+}
+
+.candidate-select {
+  min-height: 30px !important;
+  font-size: 11px !important;
+  padding: 0 10px !important;
+}
+
+.candidate-snippet {
+  margin: 0;
+  max-height: 130px;
+  overflow: auto;
+  color: #cfcfd4;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.7;
   white-space: pre-wrap;
 }
 

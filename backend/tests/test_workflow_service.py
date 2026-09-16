@@ -303,6 +303,66 @@ def test_execute_snapshot_run_writes_steps_and_statuses(memory_repo, monkeypatch
     assert node["result"]["content"] == "歌词正文"
 
 
+# ---------- 多版本候选：必须人工选择，不允许隐式随便挑一个 ----------
+
+
+def test_rerun_appends_candidate_records(memory_repo, monkeypatch):
+    configure_lyrics(1, None, {"theme": "夏夜"})
+
+    async def fake_capability(capability_id, inputs, *, context):
+        return CapabilityResult(
+            capability_id=capability_id,
+            status="succeeded",
+            result={"format": "markdown", "content": "歌词版本"},
+        )
+
+    monkeypatch.setattr(workflow_service, "run_capability", fake_capability)
+    run(run_workflow(1, None))
+    run(run_workflow(1, None))
+
+    node = next(
+        n for n in workflow_service.get_draft(1, None)["draft"]["nodes"] if n.get("capability_id")
+    )
+    assert len(node["candidates"]) == 2
+    assert node["selectedCandidateId"] == node["candidates"][0]["id"]
+
+
+def test_multi_candidate_requires_manual_choice(memory_repo):
+    """上游已有多个成功版本但没选定：占位符不能隐式拿任何一份，必须让用户选。"""
+    configure_lyrics(1, None, {"theme": "夏夜"})
+    current = workflow_service.get_draft(1, None)
+    draft = current["draft"]
+    node = next(n for n in draft["nodes"] if n.get("capability_id"))
+    node["candidates"] = [
+        {"id": "c-a", "status": "succeeded", "content": "版本 A", "created_at": workflow_service._now()},
+        {"id": "c-b", "status": "succeeded", "content": "版本 B", "created_at": workflow_service._now()},
+    ]
+    save_draft(1, None, draft, expected_revision=current["revision"])
+
+    # 再挂一个图像节点吃上游
+    image = workflow_service.configure_image(
+        1,
+        None,
+        {"prompt": "根据 ${upstream.result.content} 生成"},
+        upstream_node_id=node["id"],
+    )
+    image_node = next(
+        n for n in image["draft"]["nodes"] if n.get("capability_id") == "image.generate"
+    )
+
+    resolved, error = workflow_service._resolve_params(image_node, image["draft"], {})
+    assert error is not None and "先在其中选一个" in error
+
+    # 手动选版本后就能解析到选中的内容
+    upstream_node = next(
+        n for n in image["draft"]["nodes"] if n.get("capability_id") == "lyrics.generate"
+    )
+    upstream_node["selectedCandidateId"] = "c-b"
+    resolved, error = workflow_service._resolve_params(image_node, image["draft"], {})
+    assert error is None
+    assert resolved["prompt"] == "根据 版本 B 生成"
+
+
 def test_clear_workflow_resets_draft(memory_repo):
     configure_lyrics(1, None, {"theme": "夏夜"})
     cleared = workflow_service.clear_workflow(1, None)

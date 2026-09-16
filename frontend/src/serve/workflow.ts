@@ -2,6 +2,14 @@ import request from '@/utils/request'
 
 export type WorkflowRunStatus = 'idle' | 'running' | 'succeeded' | 'failed' | 'model_unavailable'
 
+export interface WorkflowCandidate {
+  id: string
+  status: string
+  content: string | null
+  error?: string | null
+  created_at?: string
+}
+
 export interface WorkflowDraftNode {
   id: string
   kind?: 'endpoint' | 'tool'
@@ -19,6 +27,8 @@ export interface WorkflowDraftNode {
   runStatus?: WorkflowRunStatus
   result?: { format?: string; content?: string } | null
   error?: string | null
+  candidates?: WorkflowCandidate[]
+  selectedCandidateId?: string | null
 }
 
 export interface WorkflowDraft {
