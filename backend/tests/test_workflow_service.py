@@ -22,8 +22,43 @@ from services.workflow_service import (
 )
 
 
+class _RunRepoStub:
+    """测试用 stub：active_run 非 None 时模拟“有运行正在进行”。"""
+
+    def __init__(self, active_run=None, latest=None, steps=None):
+        self._active = active_run
+        self._latest = latest
+        self._steps = steps or []
+
+    def find_active_for_workflow(self, user_id, workflow_id):
+        return self._active
+
+    def list_recent(self, user_id, project_id, limit=5):
+        return [self._latest] if self._latest else []
+
+    def get(self, user_id, run_id):
+        return self._latest if self._latest and self._latest["id"] == run_id else None
+
+    def list_steps(self, user_id, run_id):
+        return self._steps
+
+    def create(self, **kwargs):
+        return {"id": kwargs.get("run_id"), **kwargs}
+
+    def create_step(self, **kwargs):
+        return {"id": "step-stub"}
+
+    def finish_step(self, *a, **k):
+        return True
+
+    def update_status(self, *a, **k):
+        return True
+
+
 @pytest.fixture
 def memory_repo(monkeypatch):
+    # run_repo 默认置空 stub：避免 save_draft 编辑锁检查误触真实 SQLite
+    monkeypatch.setattr(workflow_service, "workflow_run_repo", _RunRepoStub())
     store: dict = {}
 
     def get(user_id, project_id):
@@ -134,6 +169,95 @@ def test_save_draft_rejects_invalid_edges(memory_repo):
 
     with pytest.raises(AppError):
         save_draft(1, None, bad, expected_revision=current["revision"])
+
+
+# ---------- 运行期编辑锁（B19）：运行中拒绝 Draft 写入，返回 WORKFLOW_BUSY ----------
+
+
+def test_save_draft_rejected_while_run_active(memory_repo, monkeypatch):
+    configure_lyrics(1, None, {"theme": "夏夜"})
+    current = workflow_service.get_draft(1, None)
+    monkeypatch.setattr(
+        workflow_service,
+        "workflow_run_repo",
+        _RunRepoStub(active_run={"id": "run-busy", "status": "running"}),
+    )
+
+    with pytest.raises(AppError) as exc:
+        save_draft(1, None, current["draft"], expected_revision=current["revision"])
+    assert exc.value.status_code == 409
+    assert "WORKFLOW_BUSY" in exc.value.detail
+
+
+def test_save_draft_ok_when_no_active_run(memory_repo, monkeypatch):
+    monkeypatch.setattr(workflow_service, "workflow_run_repo", _RunRepoStub())
+    current = workflow_service.get_draft(1, None)
+    saved = save_draft(1, None, current["draft"], expected_revision=current["revision"])
+    assert saved["revision"] == current["revision"] + 1
+
+
+def test_submit_run_rejected_when_already_running(memory_repo, monkeypatch):
+    """已有运行进行时，重复提交直接拒绝，防止双跑互相覆盖候选与状态。"""
+    monkeypatch.setattr(
+        workflow_service,
+        "workflow_run_repo",
+        _RunRepoStub(active_run={"id": "run-busy", "status": "queued"}),
+    )
+    with pytest.raises(AppError) as exc:
+        workflow_service.submit_workflow_run(1, None)
+    assert exc.value.status_code == 409
+    assert "WORKFLOW_BUSY" in exc.value.detail
+
+
+# ---------- 运行状态查询（B18）：run_id 可省略，返回进度与节点明细 ----------
+
+
+_RUN_FIXTURE = {
+    "id": "run-abc",
+    "user_id": 1,
+    "project_id": None,
+    "status": "failed",
+    "error": "图像生成: 模型尚未配置",
+    "created_at": "2026-09-16T00:00:00",
+    "started_at": "2026-09-16T00:00:01",
+    "finished_at": "2026-09-16T00:01:00",
+    "draft_snapshot": {
+        "nodes": [
+            {"id": "node-lyr", "name": "歌词生成"},
+            {"id": "node-img", "name": "图像生成"},
+        ],
+        "edges": [],
+    },
+}
+
+_STEPS_FIXTURE = [
+    {"id": "s1", "run_id": "run-abc", "node_id": "node-lyr", "capability_id": "lyrics.generate",
+     "status": "succeeded", "input": None, "output": None, "error": None},
+    {"id": "s2", "run_id": "run-abc", "node_id": "node-img", "capability_id": "image.generate",
+     "status": "failed", "input": None, "output": None, "error": "模型尚未配置"},
+]
+
+
+def test_get_run_status_detail_returns_progress_and_steps(memory_repo, monkeypatch):
+    monkeypatch.setattr(
+        workflow_service,
+        "workflow_run_repo",
+        _RunRepoStub(latest=_RUN_FIXTURE, steps=_STEPS_FIXTURE),
+    )
+    detail = workflow_service.get_run_status_detail(1, None)
+    assert detail["run_id"] == "run-abc"
+    assert detail["status"] == "failed"
+    assert detail["progress"] == {"done": 2, "total": 2}
+    names = [step["node_name"] for step in detail["steps"]]
+    assert names == ["歌词生成", "图像生成"]
+    assert detail["steps"][1]["error"] == "模型尚未配置"
+
+
+def test_get_run_status_detail_404_when_no_runs(memory_repo, monkeypatch):
+    monkeypatch.setattr(workflow_service, "workflow_run_repo", _RunRepoStub())
+    with pytest.raises(AppError) as exc:
+        workflow_service.get_run_status_detail(1, None)
+    assert exc.value.status_code == 404
 
 
 # ---------- 图像节点：API 不装也能搭建 Workflow，运行时如实上报模型未配置 ----------

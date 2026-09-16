@@ -72,6 +72,34 @@ def get(user_id: int, run_id: str) -> dict[str, Any] | None:
     return _run(row) if row else None
 
 
+def find_active_for_workflow(user_id: int, workflow_id: int | None) -> dict[str, Any] | None:
+    """检查某一份 Draft 当前是否有 queued/running 的运行；编辑锁用它拒绝写入。"""
+    if workflow_id is None:
+        return None
+    with db_connection() as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            f"SELECT {_RUN_COLUMNS} FROM workflow_runs "
+            "WHERE workflow_id=? AND user_id=? AND status IN ('queued','running') "
+            "ORDER BY created_at DESC LIMIT 1",
+            (workflow_id, user_id),
+        ).fetchone()
+    return _run(row) if row else None
+
+
+def list_recent(user_id: int, project_id: int | None, limit: int = 5) -> list[dict[str, Any]]:
+    """某项目最近的运行记录（新→旧）；默认工作区 project_id 用 COALESCE 匹配。"""
+    with db_connection() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"SELECT {_RUN_COLUMNS} FROM workflow_runs "
+            "WHERE user_id=? AND COALESCE(project_id, -1)=COALESCE(?, -1) "
+            "ORDER BY created_at DESC LIMIT ?",
+            (user_id, project_id, max(1, min(limit, 20))),
+        ).fetchall()
+    return [_run(row) for row in rows]
+
+
 def update_status(
     run_id: str,
     status: str,

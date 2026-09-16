@@ -69,9 +69,12 @@ export const useTaskStore = defineStore('tasks', () => {
     void load(projectId.value)
     stopProjectWatch?.()
     stopProjectWatch = watch(projectId, (next) => void load(next))
+    // B21 修复：不能只在“已知有活跃任务”时才轮询——聊天里助手可以随时提交新任务，
+    // 面板闲着时老逻辑会陷入鸡生蛋死锁，永远显示“0 个运行中”。
+    // 改为无条件固定节拍轮询（3s）：空闲时成本可忽略，运行时比 1.5s 略慢但绝不会停摆。
     pollingTimer = window.setInterval(() => {
-      if (hasActiveTasks.value) void load(projectId.value)
-    }, 1500)
+      void load(projectId.value)
+    }, 3000)
   }
 
   function stopPolling() {

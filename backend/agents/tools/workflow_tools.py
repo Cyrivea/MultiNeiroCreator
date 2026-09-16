@@ -25,6 +25,7 @@ from services.workflow_service import (
     clear_workflow,
     configure_image,
     configure_lyrics,
+    get_run_status_detail,
     get_workflow_summary,
     submit_workflow_run,
 )
@@ -117,6 +118,7 @@ def clear_workflow_draft() -> str:
 
     生成请求绝不能用这个工具；需要调整参数或节点时调用 configure_*，
     先看能否复用已有节点。
+    运行中的 Workflow 不应调用本工具；请先 get_workflow_run_status 看清状态。
     """
     execution = current_capability_context()
     cleared = clear_workflow(execution.user_id, execution.project_id)
@@ -127,6 +129,36 @@ def clear_workflow_draft() -> str:
             "revision": cleared["revision"],
             "message": "已清空工作区，只保留输入输出端点。",
             "_ui_events": [{"type": "workflow_snapshot", "snapshot": cleared["draft"]}],
+        }
+    )
+
+
+@tool
+def get_workflow_run_status(run_id: str | None = None) -> str:
+    """查询一次 Workflow 运行的进度与每个节点的结果。
+
+    不传 run_id 时查询当前项目最近一次运行。用户追问跑到哪一步了、是否失败
+    等信息时必须先调用本工具，不允许凭记忆作答。返回：总状态（queued/running/
+    succeeded/failed）、完成进度（x/y）、按顺序的节点步骤（状态+错误原因）。
+    """
+    execution = current_capability_context()
+    detail = get_run_status_detail(execution.user_id, execution.project_id, run_id or None)
+    return _json(
+        {
+            "status": detail["status"],
+            "run_id": detail["run_id"],
+            "error": detail["error"],
+            "progress": f"{detail['progress']['done']}/{detail['progress']['total']}",
+            "steps": [
+                {
+                    "node": step["node_name"],
+                    "capability": step["capability_id"],
+                    "status": step["status"],
+                    "error": step["error"],
+                }
+                for step in detail["steps"]
+            ],
+            "message": "如实按总状态与节点步骤向用户汇报；失败要说出失败节点和原因。",
         }
     )
 
@@ -161,7 +193,7 @@ async def run_current_workflow() -> str:
             "run_id": result["run_id"],
             "job_id": result["job_id"],
             "revision": result["revision"],
-            "message": "Workflow 已排队执行，节点显示运行状态，后台 Worker 完成后结果写回画布。",
+            "message": "Workflow 已排队执行。告诉用户：画布节点会实时显示运行状态；执行需要一点时间，可随时追问进度（追问时调用 get_workflow_run_status 查最新状态再作答）。",
             "_ui_events": [{"type": "workflow_snapshot", "snapshot": result["draft"]}],
         }
     )

@@ -24,7 +24,10 @@
           </button>
         </header>
 
-        <div class="panel-body">
+        <div class="panel-body" :class="{ 'is-running-locked': workflowStore.isRunning }">
+          <div v-if="workflowStore.isRunning" class="panel-running-lock" role="status">
+            Workflow 运行中，参数暂不可修改，运行结束后自动恢复。
+          </div>
           <section class="block">
             <header class="block-head">
               <span>主要输入</span>
@@ -676,6 +679,22 @@ function artMark(type: string) {
   background: rgba(255, 255, 255, 0.09) !important;
   border-color: rgba(255, 255, 255, 0.26) !important;
   color: #fff !important;
+}
+
+/* B19：运行期锁定参数编辑 */
+.panel-running-lock {
+  margin: 4px 0 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  border-radius: 8px;
+  background: rgba(23, 27, 34, 0.9);
+  color: #c8cdd6;
+  font-size: 11px;
+}
+
+.panel-body.is-running-locked .block {
+  pointer-events: none;
+  opacity: 0.65;
 }
 
 .panel-body {

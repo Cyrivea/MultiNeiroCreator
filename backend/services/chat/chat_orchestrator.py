@@ -22,12 +22,14 @@ from starlette.concurrency import iterate_in_threadpool
 
 from agents.neyria import client
 from agents.tools.registry import tools_map, tools_schema
+from core import config
 from repositories.chat_repo import append_message
 from services.capabilities import CapabilityContext, use_capability_context
 from services.chat.context_builder import build_chat_context
 from services.chat.tool_executor import execute_tool
 
-CHAT_MODEL = "glm-4-flash"
+# 模型名统一走环境变量（config.CHAT_MODEL），不在代码里写死
+CHAT_MODEL = config.CHAT_MODEL
 
 MAX_TOOL_ROUNDS = 5
 MAX_TOOL_CALLS_PER_ROUND = 5

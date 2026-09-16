@@ -125,6 +125,13 @@ def save_draft(
     current = get_draft(user_id, project_id)
     if current["revision"] != expected_revision:
         raise AppError("Workflow 已被其他操作更新，请刷新后重试", status_code=409)
+    # 运行期间禁止外部编辑：运行快照回写与用户写入并存会互相踩掉对方。
+    # 前端有只读锁，这里是兜底；错误码 WORKFLOW_BUSY 供前端区分友好提示。
+    if workflow_run_repo.find_active_for_workflow(user_id, current["id"]) is not None:
+        raise AppError(
+            "WORKFLOW_BUSY：Workflow 正在运行，运行结束后会自动解锁，请稍后再编辑",
+            status_code=409,
+        )
     _validate_draft_shape(draft)
     saved = workflow_repo.upsert(user_id, project_id, expected_revision + 1, draft, _now())
     return {"id": saved["id"], "revision": saved["revision"], "draft": saved["draft"]}
@@ -493,6 +500,58 @@ async def run_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
     }
 
 
+# ---------- 运行状态查询（Assistant 进度查询工具与前端进度面板共用） ----------
+
+
+def _node_display_name(run: dict[str, Any], node_id: str | None) -> str:
+    for node in run.get("draft_snapshot", {}).get("nodes", []):
+        if str(node.get("id")) == node_id:
+            return str(node.get("name") or node_id)
+    return node_id or ""
+
+
+def get_run_status_detail(
+    user_id: int,
+    project_id: int | None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """返回一次 Workflow 运行的完整状态；run_id 为空时取当前项目最近一条。"""
+    if run_id is None:
+        _check_project_owner(user_id, project_id)
+        recent = workflow_run_repo.list_recent(user_id, project_id, limit=1)
+        if not recent:
+            raise AppError("目前没有可查询的 Workflow 运行记录", status_code=404)
+        run = recent[0]
+    else:
+        run = workflow_run_repo.get(user_id, run_id)  # repo 已按 user_id 过滤
+        if run is None:
+            raise AppError("运行记录不存在", status_code=404)
+        _check_project_owner(user_id, run.get("project_id"))
+
+    steps = workflow_run_repo.list_steps(user_id, run["id"])
+    step_items = [
+        {
+            "node_id": step.get("node_id"),
+            "node_name": _node_display_name(run, step.get("node_id")),
+            "capability_id": step.get("capability_id"),
+            "status": step.get("status"),
+            "error": step.get("error"),
+        }
+        for step in steps
+    ]
+    done_count = sum(1 for s in step_items if s["status"] in {"succeeded", "failed"})
+    return {
+        "run_id": run["id"],
+        "status": run["status"],
+        "error": run.get("error"),
+        "created_at": run.get("created_at"),
+        "started_at": run.get("started_at"),
+        "finished_at": run.get("finished_at"),
+        "progress": {"done": done_count, "total": len(step_items)},
+        "steps": step_items,
+    }
+
+
 # ---------- 异步任务队列接入（submit → 后台 Worker 执行） ----------
 
 
@@ -500,6 +559,13 @@ def submit_workflow_run(user_id: int, project_id: int | None) -> dict[str, Any]:
     """创建异步运行记录并入队任务；立即返回 run/job 信息，不阻塞 HTTP。"""
     _check_project_owner(user_id, project_id)
     current = get_draft(user_id, project_id)
+    # 防重复提交：已有 queued/running 运行时拒绝，双跑会互相覆盖候选与状态。
+    # 与保存编辑同一错误码，前端/助手读到都先查进度再决定动作。
+    if workflow_run_repo.find_active_for_workflow(user_id, current["id"]) is not None:
+        raise AppError(
+            "WORKFLOW_BUSY：已有 Workflow 正在运行，请先查询进度或等待其结束",
+            status_code=409,
+        )
     draft = current["draft"]
     ordered = _execution_order(draft)
     for node in ordered:

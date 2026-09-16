@@ -132,6 +132,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
   )
   const canUndo = computed(() => undoStack.value.length > 0)
   const canRedo = computed(() => redoStack.value.length > 0)
+  // B19：任一节点 running 即表现为运行中，编辑操作一律无效化（后端 WORKFLOW_BUSY 是第二道防线）
+  const isRunning = computed(() => nodes.value.some((node) => node.runStatus === 'running'))
+  /** 运行期编辑守卫：所有写操作统一从此过，避免漏改某个入口。 */
+  function editBlocked(): boolean {
+    return isRunning.value
+  }
 
   function snapshot(): WorkflowSnapshot {
     return {
@@ -383,6 +389,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   async function runCurrentWorkflow(): Promise<ToolRunStatus> {
+    if (isRunning.value) return 'running'
     await saveDraftToServer()
     const submission = await runWorkflow(currentProjectId.value)
     // 立即显示 running 节点，让用户知道任务已排队
@@ -480,7 +487,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   function addNode(tool: CreativeToolInstance) {
-    if (nodes.value.some((node) => node.toolId === tool.id)) return
+    if (editBlocked() || nodes.value.some((node) => node.toolId === tool.id)) return
     const position = positionForIndex(nodes.value.length)
     pushUndo(snapshot())
     const nodeId = `workflow-node-${tool.id}`
@@ -500,6 +507,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   function syncWithTools(tools: CreativeToolInstance[]) {
+    if (editBlocked()) return
     const validIds = new Set(tools.map((tool) => tool.id))
     // 后端/AI 管理的节点（带 capabilityId）即使没有对应的左侧 Block 实例也保留
     const validNodeIds = new Set(
@@ -557,7 +565,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   function moveNode(id: string, x: number, y: number) {
     const node = nodes.value.find((item) => item.id === id)
-    if (!node) return
+    if (!node || editBlocked()) return
     node.x = Math.round(x)
     node.y = Math.round(y)
     // 拖动过程不 persist：每帧 JSON.stringify 全图 + localStorage 同步写入会阻塞主线程，
@@ -565,6 +573,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   function moveNodes(moves: { id: string; x: number; y: number }[]) {
+    if (editBlocked()) return
     for (const move of moves) {
       const node = nodes.value.find((item) => item.id === move.id)
       if (!node) continue
@@ -575,11 +584,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   function moveEndpoint(endpoint: WorkflowEndpoint, x: number, y: number) {
+    if (editBlocked()) return
     endpointPositions.value[endpoint] = { x: Math.round(x), y: Math.round(y) }
     // 同样不每帧 persist，终点由 commitEndpointMove 负责统一写入。
   }
 
   function commitEndpointMove(previous: WorkflowSnapshot) {
+    if (editBlocked()) return
     if (JSON.stringify(previous.endpointPositions) === JSON.stringify(endpointPositions.value))
       return
     pushUndo(previous)
@@ -587,12 +598,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   function commitNodeMove(previous: WorkflowSnapshot) {
+    if (editBlocked()) return
     if (JSON.stringify(previous) === JSON.stringify(snapshot())) return
     pushUndo(previous)
     persist()
   }
 
   function removeNodes(ids: string[]) {
+    if (editBlocked()) return
     const removeIds = new Set(ids)
     if (!removeIds.size) return
     const hasNode = nodes.value.some((node) => removeIds.has(node.id))
@@ -619,7 +632,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   /** 在多版本里指定下游引用哪一条（一次只能有一个） */
   function selectCandidate(nodeId: string, candidateId: string) {
     const node = nodes.value.find((item) => item.id === nodeId)
-    if (!node) return
+    if (!node || editBlocked()) return
     node.selectedCandidateId = candidateId
     persist()
   }
@@ -643,7 +656,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
     return false
   }
 
-  function addConnection(source: string, target: string) {
+  function addConnection(source: string, target: string): boolean {
+    if (editBlocked()) return false
     const validIds = new Set(nodes.value.map((node) => node.id))
     const isValidSource = source === WORKFLOW_INPUT_ID || validIds.has(source)
     const isValidTarget = target === WORKFLOW_OUTPUT_ID || validIds.has(target)
@@ -662,6 +676,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   function removeConnection(source: string, target: string) {
+    if (editBlocked()) return
     const index = edges.value.findIndex((edge) => edge.source === source && edge.target === target)
     if (index < 0) return
     pushUndo(snapshot())
@@ -670,6 +685,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   function undo() {
+    if (editBlocked()) return
     const previous = undoStack.value.pop()
     if (!previous) return
     redoStack.value.push(snapshot())
@@ -682,6 +698,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   function redo() {
+    if (editBlocked()) return
     const next = redoStack.value.pop()
     if (!next) return
     undoStack.value.push(snapshot())
@@ -730,6 +747,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     revision,
     workflowId,
     isApplyingRemote,
+    isRunning,
     nodeWidth: 236,
     nodeHeight: 116,
     loadForProject,

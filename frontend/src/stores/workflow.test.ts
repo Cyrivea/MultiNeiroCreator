@@ -105,6 +105,39 @@ describe('workflow store：后端 Draft 同步', () => {
     expect(payload.nodes.filter((node) => node.endpoint === 'input')).toHaveLength(1)
   })
 
+  it('B19：运行期间画布编辑全部无效（isRunning 守卫）', () => {
+    const store = useWorkflowStore()
+    const runningDraft: WorkflowDraft = {
+      ...AI_DRAFT,
+      nodes: AI_DRAFT.nodes.map((node) =>
+        node.id === 'workflow-node-lyrics-abc' ? { ...node, runStatus: 'running' as const } : node,
+      ),
+    }
+    store.applyWorkflowSnapshot(runningDraft, 3, 42)
+    expect(store.isRunning).toBe(true)
+
+    const lyricsId = 'workflow-node-lyrics-abc'
+    const beforeEdges = store.edges.length
+    // 连线 / 拆除 / 删除 / 拖动 / 撤销都被拒绝
+    expect(store.addConnection(WORKFLOW_INPUT_ID, lyricsId)).toBe(false)
+    store.removeConnection(WORKFLOW_INPUT_ID, lyricsId)
+    expect(store.edges).toHaveLength(beforeEdges)
+    store.removeNode(lyricsId)
+    expect(store.nodes.map((n) => n.id)).toContain(lyricsId)
+    store.moveNode(lyricsId, 9999, 9999)
+    expect(store.nodes.find((n) => n.id === lyricsId)?.x).not.toBe(9999)
+    store.moveEndpoint('input', 1, 1)
+    expect(store.endpointPositions.input?.x).not.toBe(1)
+    store.undo()
+    expect(store.nodes.map((n) => n.id)).toContain(lyricsId)
+
+    // 运行结束（轮询拿到终态）后自动解锁
+    store.applyWorkflowSnapshot(AI_DRAFT, 4, 42)
+    expect(store.isRunning).toBe(false)
+    store.removeConnection(WORKFLOW_INPUT_ID, lyricsId)
+    expect(store.edges).toHaveLength(beforeEdges - 1)
+  })
+
   it('syncWithTools 不会删除 AI 管理但暂无左侧实例的节点（防回归）', () => {
     const store = useWorkflowStore()
     store.applyWorkflowSnapshot(AI_DRAFT, 3, 42)

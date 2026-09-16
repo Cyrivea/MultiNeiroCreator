@@ -37,6 +37,8 @@ if not SECRET_KEY:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
 API_KEY = os.getenv("API_KEY", "").strip()
+# 聊天主模型与歌词生产模型统一走环境变量；换 Provider 时只改配置不动代码。
+CHAT_MODEL = os.getenv("CHAT_MODEL", "glm-4-flash").strip()
 LYRICS_MODEL = os.getenv("LYRICS_MODEL", "glm-4-flash").strip()
 SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "").strip()
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3").strip()

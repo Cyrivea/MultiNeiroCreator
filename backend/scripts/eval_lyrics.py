@@ -18,7 +18,6 @@ import os
 import random
 import sys
 
-# 评测需要直连智谱：清掉环境里可能存在的 HTTP(S) 代理（本机 Clash WSL 转发会挂起请求）。
 for _k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
     os.environ.pop(_k, None)
 
@@ -41,7 +40,7 @@ THEMES = [
 MIN_LINES = 8
 REFUSAL_HINTS = ["我无法", "对不起", "作为AI"]
 JUDGE_DIMENSIONS = ["切题度", "意象与修辞", "情感递进", "韵脚节奏"]
-# 使用固定随机种子，保证同一环境多次跑的 A/B 分配一致，结果可复现
+
 AB_SEED = 20_260_914
 DRY_RUN_OUTPUT = "eval_result.dryrun.json"
 
@@ -162,7 +161,7 @@ def judge_theme_with_llm(theme: str, a_text: str, b_text: str) -> dict:
         result = judge_theme_with_llm_once(theme, a_text, b_text)
         if "eval_error" not in result or attempt == 2:
             return result
-    return result  # pragma: no cover - 两次都失败才走到这里
+    return result
 
 
 def judge_theme_dry_run(theme: str, a_text: str, b_text: str, preferred: str | None) -> dict:

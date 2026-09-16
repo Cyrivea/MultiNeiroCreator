@@ -2,11 +2,21 @@
   <section
     ref="canvasRef"
     class="workflow-canvas"
-    :class="{ 'is-pan-mode': workflowStore.mode === 'pan', 'is-connecting': connectionState }"
+    :class="{
+      'is-pan-mode': workflowStore.mode === 'pan',
+      'is-connecting': connectionState,
+      'is-running-locked': workflowStore.isRunning,
+    }"
     aria-label="Workflow 工作流画布"
     @wheel.prevent="handleWheel"
     @pointerdown="handleCanvasPointerDown"
   >
+    <div v-if="workflowStore.isRunning" class="workflow-running-banner" aria-live="polite">
+      <span class="workflow-running-spinner" aria-hidden="true"></span>
+      <strong>工作区运行中</strong>
+      <span>助手正在执行此 Workflow，画布暂不可编辑，运行结束后自动恢复。</span>
+    </div>
+
     <div class="workflow-mode-hint" aria-live="polite">
       <span class="workflow-mode-dot" :class="`is-${workflowStore.mode}`"></span>
       <strong>{{ modeLabel }}</strong>
@@ -877,6 +887,55 @@ onBeforeUnmount(() => {
 
 .workflow-canvas.is-connecting {
   cursor: crosshair;
+}
+
+/* B19：运行期画布锁定。编辑操作由 store.isRunning 守卫拦截，这里提供视觉与交互反馈 */
+.workflow-running-banner {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  border-radius: 8px;
+  background: rgba(23, 27, 34, 0.92);
+  color: #c8cdd6;
+  font-size: 11px;
+  line-height: 1.4;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+.workflow-running-banner strong {
+  color: #f2f4f8;
+}
+
+.workflow-running-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(96, 165, 250, 0.25);
+  border-top-color: #60a5fa;
+  animation: workflow-spin 0.9s linear infinite;
+}
+
+@keyframes workflow-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 运行期间鼠标交互全部转向横幅提示，节点本身不可点 */
+.workflow-canvas.is-running-locked .workflow-node,
+.workflow-canvas.is-running-locked .workflow-connection-group {
+  pointer-events: none;
+}
+
+.workflow-canvas.is-running-locked .workflow-node {
+  opacity: 0.82;
 }
 
 .workflow-mode-hint {

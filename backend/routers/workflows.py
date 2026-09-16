@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from core.deps import verify_token
 from schemas.workflow import WorkflowDraftRequest, WorkflowDraftResponse, WorkflowRunResponse
 from services.project_service import get_project
-from services.workflow_service import get_draft, save_draft, submit_workflow_run
+from services.workflow_service import (
+    get_draft,
+    get_run_status_detail,
+    save_draft,
+    submit_workflow_run,
+)
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
@@ -27,6 +32,18 @@ def get_workflow_draft(project_id: int | None = Query(None), user=Depends(verify
 def save_workflow_draft(req: WorkflowDraftRequest, user=Depends(verify_token)):
     _check_project(user["id"], req.project_id)
     return save_draft(user["id"], req.project_id, req.draft, req.expected_revision)
+
+
+@router.get("/runs/latest")
+def latest_run_status(project_id: int | None = Query(None), user=Depends(verify_token)):
+    """当前项目最近一次 Workflow 运行的状态与各节点步骤（前端进度面板/排查用）。"""
+    _check_project(user["id"], project_id)
+    return get_run_status_detail(user["id"], project_id, None)
+
+
+@router.get("/runs/{run_id}")
+def get_run_status_route(run_id: str, user=Depends(verify_token)):
+    return get_run_status_detail(user["id"], None, run_id)
 
 
 @router.post("/run", response_model=WorkflowRunResponse, status_code=202)

@@ -1,6 +1,7 @@
 <template>
   <section class="task-panel" aria-label="后台任务">
-    <div class="task-panel-head">
+    <!-- B22: SettingsPanel 外层已有区块标题，“embedded” 模式下不重复输出自己的标题头 -->
+    <div v-if="!props.embedded" class="task-panel-head">
       <div>
         <div class="task-panel-title">后台任务</div>
         <div class="task-panel-caption">文档索引在 Worker 中异步执行</div>
