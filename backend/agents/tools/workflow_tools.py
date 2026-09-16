@@ -25,6 +25,7 @@ from services.workflow_service import (
     clear_workflow,
     configure_image,
     configure_lyrics,
+    get_workflow_summary,
     submit_workflow_run,
 )
 
@@ -126,6 +127,25 @@ def clear_workflow_draft() -> str:
             "revision": cleared["revision"],
             "message": "已清空工作区，只保留输入输出端点。",
             "_ui_events": [{"type": "workflow_snapshot", "snapshot": cleared["draft"]}],
+        }
+    )
+
+
+@tool
+def read_workflow_state() -> str:
+    """在增删/连接节点或运行 Workflow 之前，先调用它读取当前工作区的完整状态。
+
+    返回节点列表（带 capability_id / 参数 / 运行状态）和现有连接边列表。
+    """
+    execution = current_capability_context()
+    summary = get_workflow_summary(execution.user_id, execution.project_id)
+    return _json(
+        {
+            "status": "ok",
+            "revision": summary["revision"],
+            "workflow_id": summary["workflow_id"],
+            "nodes": summary["nodes"],
+            "edges": summary["edges"],
         }
     )
 

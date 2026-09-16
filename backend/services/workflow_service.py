@@ -73,6 +73,35 @@ def empty_draft() -> dict[str, Any]:
     }
 
 
+def get_workflow_summary(user_id: int, project_id: int | None) -> dict[str, Any]:
+    """Assistant 读画布的快速摘要；nodes 带 capability_id/type/params，edges 是全量连接。"""
+    current = get_draft(user_id, project_id)
+    nodes = [
+        {
+            "id": n.get("id"),
+            "kind": n.get("kind"),
+            "type": n.get("type"),
+            "name": n.get("name"),
+            "capability_id": n.get("capability_id"),
+            "params": n.get("params"),
+            "run_status": n.get("runStatus"),
+        }
+        for n in current["draft"].get("nodes", [])
+    ]
+    edges = [
+        {"source": e.get("source"), "target": e.get("target")}
+        for e in current["draft"].get("edges", [])
+    ]
+    return {
+        "revision": current["revision"],
+        "workflow_id": current["id"],
+        "nodes": nodes,
+        "edges": edges,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+    }
+
+
 def _check_project_owner(user_id: int, project_id: int | None) -> None:
     """默认工作区（project_id=None）允许；指定项目必须属于当前用户。"""
     if project_id is not None and get_project(user_id, project_id) is None:
@@ -532,11 +561,13 @@ async def _execute_snapshot_run(
     node_outputs: dict[str, dict[str, Any]] = {}
     first_error: str | None = None
     final_status = "succeeded"
-    current_live = await asyncio.to_thread(get_draft, user_id, project_id)
-    live_draft = current_live["draft"]
-    live_by_id = {n.get("id"): n for n in live_draft.get("nodes", [])}
 
     for node in ordered:
+        # 每个节点执行前都重读最新 Draft：运行期间用户/AI 可能刚改过拓扑，
+        # 只允许更新节点状态，坚决不回写 edges / nodes（避免“旧图盖新图”）。
+        current_live = await asyncio.to_thread(get_draft, user_id, project_id)
+        live_by_id = {n.get("id"): n for n in current_live["draft"].get("nodes", [])}
+
         resolved_params, params_error = _resolve_params(node, draft_snapshot, node_outputs)
         step = workflow_run_repo.create_step(
             step_id=f"step-{uuid.uuid4().hex[:12]}",
@@ -580,7 +611,7 @@ async def _execute_snapshot_run(
                 user_id,
                 project_id,
                 current_live["revision"] + 1,
-                live_draft,
+                current_live["draft"],
                 _now(),
             )
         if result.result and result.result.get("content") is not None:

@@ -16,6 +16,7 @@ def test_all_tools_discovered():
         "configure_lyrics_workflow",
         "configure_image_workflow",
         "clear_workflow_draft",
+        "read_workflow_state",
         "run_current_workflow",
     }
     assert registry.capability_map == {
@@ -23,6 +24,7 @@ def test_all_tools_discovered():
         "configure_lyrics_workflow": "workflow.control",
         "configure_image_workflow": "workflow.control",
         "clear_workflow_draft": "workflow.control",
+        "read_workflow_state": "workflow.control",
         "run_current_workflow": "workflow.control",
     }
 

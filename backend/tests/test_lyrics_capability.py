@@ -23,7 +23,12 @@ def test_assistant_schema_hides_direct_capability_but_keeps_workflow_tools():
 
     names = {item["function"]["name"] for item in chat_orchestrator._tools_for_context(False)}
     assert "generate_lyrics_block" not in names
-    assert {"configure_lyrics_workflow", "run_current_workflow"} <= names
+    assert {
+        "configure_lyrics_workflow",
+        "configure_image_workflow",
+        "read_workflow_state",
+        "run_current_workflow",
+    } <= names
 
 
 def _mock_lyrics_executor(runtime_module, monkeypatch, executor):

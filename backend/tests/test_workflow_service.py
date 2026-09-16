@@ -185,7 +185,47 @@ def test_workflow_rejects_unconfigured_capability(memory_repo):
     assert "未注册的能力" in exc.value.detail
 
 
-# ---------- 串联：上游节点结果作为下游输入 ----------
+# ---------- Runner 不能回写旧拓扑：运行期间的新连线不能被覆盖 ----------
+
+
+def test_runner_never_overwrites_new_edges(memory_repo, monkeypatch):
+    """用户在 Workflow 运行期间新建了连线；Runner 结束后不能把它抹掉。"""
+    configure_lyrics(1, None, {"theme": "夏夜"})
+    run_id = "run-race-1"
+
+    captured_draft_states = []
+    # Runner 执行期间，用户往画布上连了一条新边（模拟 AI 又改图或手拉线）
+    current = workflow_service.get_draft(1, None)
+    draft_with_extra_edge = copy.deepcopy(current["draft"])
+    draft_with_extra_edge["edges"].append({"source": INPUT_ID, "target": OUTPUT_ID})
+    save_draft(1, None, draft_with_extra_edge, expected_revision=current["revision"])
+
+    monkeypatch.setattr(
+        workflow_service.workflow_run_repo, "create_step", lambda **kw: {"id": "step-x"}
+    )
+    monkeypatch.setattr(workflow_service.workflow_run_repo, "finish_step", lambda *a, **k: True)
+    monkeypatch.setattr(workflow_service.workflow_run_repo, "update_status", lambda *a, **k: True)
+
+    async def fake_capability(capability_id, inputs, *, context):
+        # 假装抓到此刻的真实 Draft——应该已经带上那条新边
+        live = workflow_service.get_draft(user_id=1, project_id=None)
+        captured_draft_states.append(copy.deepcopy(live["draft"]))
+        return CapabilityResult(
+            capability_id=capability_id,
+            status="succeeded",
+            result={"format": "markdown", "content": "歌词正文"},
+        )
+
+    monkeypatch.setattr(workflow_service, "run_capability", fake_capability)
+    out = workflow_service.execute_workflow_run_job(
+        job_id="job-x", run_id=run_id, draft_snapshot=current["draft"], user_id=1, project_id=None
+    )
+    assert out["status"] == "succeeded"
+
+    final = workflow_service.get_draft(1, None)["draft"]
+    assert any(e["source"] == INPUT_ID and e["target"] == OUTPUT_ID for e in final["edges"]), (
+        "Runner 必须不动 Draft 拓扑：运行期间新增的连线不能被覆盖"
+    )
 
 
 def test_chained_configure_rewires_edges(memory_repo):
