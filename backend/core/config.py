@@ -74,6 +74,9 @@ CHAT_HISTORY_MAX_ITEMS = int(os.getenv("CHAT_HISTORY_MAX_ITEMS", "200"))
 CHAT_ATTACHMENTS_MAX_ITEMS = int(os.getenv("CHAT_ATTACHMENTS_MAX_ITEMS", "20"))
 PROFILE_MAX_CHARS = int(os.getenv("PROFILE_MAX_CHARS", "5000"))
 
+# ===== 工具执行超时（秒）：超过即中断并回给模型一条明确的超时结果 =====
+TOOL_TIMEOUT_SECONDS = int(os.getenv("TOOL_TIMEOUT_SECONDS", "120"))
+
 # ===== E3 持久化任务 Worker =====
 JOB_LEASE_SECONDS = int(os.getenv("JOB_LEASE_SECONDS", "60"))
 JOB_MAX_ATTEMPTS = int(os.getenv("JOB_MAX_ATTEMPTS", "3"))

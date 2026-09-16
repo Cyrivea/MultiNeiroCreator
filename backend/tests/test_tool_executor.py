@@ -58,3 +58,20 @@ def test_tool_exception_becomes_outcome_not_raise(monkeypatch):
     outcome = run(execute_tool("calculate", '{"expression": "1"}'))
     assert outcome.ok is False
     assert "工具执行失败" in outcome.result
+
+
+def test_tool_timeout_becomes_outcome_not_raise(monkeypatch):
+    """防卡死：工具超过 TOOL_TIMEOUT_SECONDS 必须返回失败结果单而不是永远等待。"""
+
+    class SlowTool:
+        def invoke(self, args):
+            import time
+
+            time.sleep(3)
+            return "never"
+
+    monkeypatch.setitem(tool_executor.tools_map, "calculate", SlowTool())
+    monkeypatch.setattr(tool_executor.config, "TOOL_TIMEOUT_SECONDS", 0.2)
+    outcome = run(execute_tool("calculate", '{"expression": "1"}'))
+    assert outcome.ok is False
+    assert "超时" in outcome.result

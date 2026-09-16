@@ -22,6 +22,9 @@ import { useWorkflowStore } from '@/stores/workflow'
 import type { WorkflowDraft } from '@/serve/workflow'
 
 const AGENT_FIRST_TOKEN_TIMEOUT_MS = 10000
+// 防卡死看门狗：首个事件到达后，任何事件（content/tool/snapshot/done）
+// 都会重置 60s 计时；超时就主动中断并给用户一句明确的错误结果。
+const AGENT_STREAM_IDLE_TIMEOUT_MS = 60000
 
 interface UseAgentChatOptions {
   /** 消息有更新时由宿主组件滚动到底部 */
@@ -36,6 +39,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
 
   let thinkingTimer: number | null = null
   let firstTokenTimeout: number | null = null
+  let streamIdleTimeout: number | null = null
 
   function startThinking() {
     stopThinking()
@@ -63,6 +67,21 @@ export function useAgentChat(options: UseAgentChatOptions) {
     }
   }
 
+  function clearStreamIdleTimeout() {
+    if (streamIdleTimeout !== null) {
+      window.clearTimeout(streamIdleTimeout)
+      streamIdleTimeout = null
+    }
+  }
+
+  /** 每个 SSE 事件都要叫一次；60s 内没有新事件视为上游卡死，主动中断。 */
+  function armStreamIdleTimeout(controller: AbortController) {
+    clearStreamIdleTimeout()
+    streamIdleTimeout = window.setTimeout(() => {
+      controller.abort('STREAM_IDLE_TIMEOUT')
+    }, AGENT_STREAM_IDLE_TIMEOUT_MS)
+  }
+
   function hydrateHistoryItem(item: AgentHistoryItem): AgentMessage {
     return {
       id: chatStore.nextMessageId(),
@@ -84,14 +103,6 @@ export function useAgentChat(options: UseAgentChatOptions) {
     chatStore.setMessagesFromHistory(history, hydrateHistoryItem)
     void options.scrollToBottom()
     return true
-  }
-
-  function isAbortLikeError(error: unknown) {
-    if (error instanceof DOMException && error.name === 'AbortError') return true
-    if (error instanceof Error) {
-      return error.name === 'AbortError' || error.message.includes('aborted')
-    }
-    return false
   }
 
   async function sendMessage() {
@@ -179,6 +190,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
         controller.abort('FIRST_TOKEN_TIMEOUT')
       }
     }, AGENT_FIRST_TOKEN_TIMEOUT_MS)
+    armStreamIdleTimeout(controller)
     await options.scrollToBottom()
 
     try {
@@ -191,23 +203,27 @@ export function useAgentChat(options: UseAgentChatOptions) {
         {
           onTool(event) {
             clearFirstTokenTimeout()
+            armStreamIdleTimeout(controller)
             chatStore.activeToolName = event.tool_name
             assistantMessage.toolName = event.tool_name
             void options.scrollToBottom()
           },
           onContent(event) {
             clearFirstTokenTimeout()
+            armStreamIdleTimeout(controller)
             if (!chatStore.hasAgentStartedReplying) {
               chatStore.hasAgentStartedReplying = true
             }
             typewriter.push(event.content)
           },
           onWorkflowSnapshot(event) {
+            armStreamIdleTimeout(controller)
             // AI 通过后端的 Workflow 命令改动画布：把 Draft 快照交给 workflow store，
             // 同时桥接成左侧 Block 实例，参数/结果/状态与画布节点同步。
             workflowStore.applyWorkflowSnapshot(event.snapshot as WorkflowDraft)
           },
           async onDone(event) {
+            clearStreamIdleTimeout()
             // 等缓冲吐完再用服务端历史整体替换消息列表，避免文字瞬间跳到全量
             await typewriter.finish()
             chatStore.activeToolName = ''
@@ -226,22 +242,30 @@ export function useAgentChat(options: UseAgentChatOptions) {
       }
 
       const isFirstTokenTimeout =
-        (controller.signal.aborted && controller.signal.reason === 'FIRST_TOKEN_TIMEOUT') ||
-        isAbortLikeError(error)
-
+        controller.signal.aborted && controller.signal.reason === 'FIRST_TOKEN_TIMEOUT'
+      const isStreamIdleTimeout =
+        controller.signal.aborted && controller.signal.reason === 'STREAM_IDLE_TIMEOUT'
       assistantMessage.isPending = false
       assistantMessage.isError = true
       assistantMessage.toolName = null
       assistantMessage.content = isFirstTokenTimeout
         ? '10 秒内未收到模型返回，已自动暂停本次响应。请检查后端日志、接口耗时或重试。'
-        : error instanceof Error
-          ? error.message
-          : 'Neyria 响应失败'
+        : isStreamIdleTimeout
+          ? '超过 60 秒没有新的响应，已自动中断（可能是上游模型或工具卡住）。请重试。'
+          : error instanceof Error
+            ? error.message
+            : 'Neyria 响应失败'
       ElMessage.error(
-        isFirstTokenTimeout ? '10 秒内未收到模型返回，已自动暂停' : assistantMessage.content,
+        isFirstTokenTimeout
+          ? '10 秒内未收到模型返回，已自动暂停'
+          : isStreamIdleTimeout
+            ? '响应超时，已自动中断'
+            : assistantMessage.content,
       )
+      clearStreamIdleTimeout()
       await options.scrollToBottom()
     } finally {
+      clearStreamIdleTimeout()
       chatStore.isSending = false
       chatStore.isUploadingAttachment = false
       chatStore.activeToolName = ''

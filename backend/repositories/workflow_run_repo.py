@@ -25,8 +25,13 @@ def _run(row: sqlite3.Row) -> dict[str, Any]:
 
 def _step(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
-    item["input"] = json.loads(item["input_json"]) if item.pop("input_json") else None
-    item["output"] = json.loads(item["output_json"]) if item.pop("output_json") else None
+    # 注意：必须先 pop 存值再 loads。写成 `json.loads(item["input_json"]) if item.pop("input_json")`
+    # 会在三元条件里先把 key pop 掉，然后真值分支再访问同 key → KeyError('input_json')。
+    # 生产事故实证：workflow_run 任务全部挂在 create_step 返回处，重试 3 次耗尽。
+    input_raw = item.pop("input_json")
+    output_raw = item.pop("output_json")
+    item["input"] = json.loads(input_raw) if input_raw else None
+    item["output"] = json.loads(output_raw) if output_raw else None
     return item
 
 

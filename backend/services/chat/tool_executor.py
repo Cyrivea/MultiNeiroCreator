@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass
 
 from agents.tools.registry import capability_map, tools_map
+from core import config
 
 logger = logging.getLogger("assistant")
 
@@ -57,12 +58,31 @@ async def execute_tool(func_name: str, func_args_raw: str) -> ToolOutcome:
 
     started = time.perf_counter()
     try:
+        # 防卡死：工具执行必须有墙钟上限。上游 Provider/网络挂起不能让用户永远看着
+        # "正在调用 xx"转圈——超时就以一张失败结果单还给模型，由模型向用户如实收同。
         if func_name in capability_map:
 
-            result = await tools_map[func_name].ainvoke(func_args)
+            result = await asyncio.wait_for(
+                tools_map[func_name].ainvoke(func_args),
+                timeout=config.TOOL_TIMEOUT_SECONDS,
+            )
         else:
 
-            result = await asyncio.to_thread(tools_map[func_name].invoke, func_args)
+            result = await asyncio.wait_for(
+                asyncio.to_thread(tools_map[func_name].invoke, func_args),
+                timeout=config.TOOL_TIMEOUT_SECONDS,
+            )
+    except TimeoutError:
+        logger.warning(
+            "工具执行超时: %s",
+            func_name,
+            extra={"evt": "tool_timeout", "tool": func_name, "timeout_s": config.TOOL_TIMEOUT_SECONDS},
+        )
+        return ToolOutcome(
+            result=f"工具 {func_name} 执行超过 {config.TOOL_TIMEOUT_SECONDS} 秒上限已被中断，"
+            "请明确告诉用户本次操作超时、请稍后重试或换个问法。",
+            ok=False,
+        )
     except Exception as exc:
         logger.exception(
             "工具执行失败: %s",

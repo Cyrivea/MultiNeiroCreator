@@ -697,6 +697,27 @@ async def _execute_snapshot_run(
     }
 
 
+def finalize_failed_run(
+    user_id: int, project_id: int | None, run_id: str, error: str
+) -> None:
+    """运行中途崩溃后的“清扫队”：把卡在 running 的节点如实标 failed。
+
+    不这么做的话，workflow_runs 停在 running、画布节点停在 running、
+    前端的运行锁和“运行中”横幅会永久挂起（实测生产事故：job 重试 3/3 耗尽，
+    但 UI 以为还在跑）。
+    """
+    workflow_run_repo.update_status(run_id, "failed", error=error[:500], finished_at=_now())
+    current = get_draft(user_id, project_id)
+    dirty = False
+    for node in current["draft"].get("nodes", []):
+        if node.get("runStatus") == "running":
+            node["runStatus"] = "failed"
+            node["error"] = error[:300]
+            dirty = True
+    if dirty:
+        workflow_repo.upsert(user_id, project_id, current["revision"] + 1, current["draft"], _now())
+
+
 def execute_workflow_run_job(
     job_id: str,
     run_id: str,
@@ -706,4 +727,9 @@ def execute_workflow_run_job(
 ) -> dict[str, Any]:
     """同步入口，供 Worker 调用；内部用 asyncio.run 驱动 async Capability Runtime。"""
     workflow_run_repo.update_status(run_id, "running", started_at=_now())
-    return asyncio.run(_execute_snapshot_run(user_id, project_id, run_id, draft_snapshot))
+    try:
+        return asyncio.run(_execute_snapshot_run(user_id, project_id, run_id, draft_snapshot))
+    except Exception as exc:
+        # 崩溃不烂尾：如实标记运行失败并解锁画布，再让 Worker 打出 job 层的重试/失败
+        finalize_failed_run(user_id, project_id, run_id, f"{type(exc).__name__}: {exc}")
+        raise

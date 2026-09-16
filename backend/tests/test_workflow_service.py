@@ -260,6 +260,31 @@ def test_get_run_status_detail_404_when_no_runs(memory_repo, monkeypatch):
     assert exc.value.status_code == 404
 
 
+# ---------- 崩溃收尸（防卡死）：运行中断后running 节点/运行状态必须复位成 failed ----------
+
+
+def test_finalize_failed_run_resets_stuck_nodes(memory_repo):
+    configure_lyrics(1, None, {"theme": "夏夜"})
+    store = memory_repo
+    draft = store[(1, None)]["draft"]
+    for node in draft["nodes"]:
+        if node.get("capability_id"):
+            node["runStatus"] = "running"
+    statuses = {}
+    stub = _RunRepoStub()
+    stub.update_status = lambda run_id, status, **kw: statuses.__setitem__(run_id, status) or True
+    workflow_service.workflow_run_repo.update_status = stub.update_status
+
+    workflow_service.finalize_failed_run(1, None, "run-stuck", "KeyError: boom")
+
+    assert statuses["run-stuck"] == "failed"
+    after = workflow_service.get_draft(1, None)
+    for node in after["draft"]["nodes"]:
+        if node.get("capability_id"):
+            assert node["runStatus"] == "failed"
+            assert "KeyError" in node["error"]
+
+
 # ---------- 图像节点：API 不装也能搭建 Workflow，运行时如实上报模型未配置 ----------
 
 
