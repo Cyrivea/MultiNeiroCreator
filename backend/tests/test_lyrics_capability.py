@@ -54,6 +54,84 @@ def test_runtime_returns_success_from_mocked_zhipu(monkeypatch):
     assert result.result == {"format": "markdown", "content": "# 夏夜城市"}
 
 
+def test_runtime_records_usage_on_success(monkeypatch):
+    from schemas.capability import LyricsGenerateInput
+
+    recorded = []
+    monkeypatch.setattr(
+        runtime.usage_repo,
+        "insert",
+        lambda *args, **kwargs: recorded.append({"args": args, "kwargs": kwargs}) or {"id": 1},
+    )
+
+    entry = runtime.CAPABILITY_REGISTRY["lyrics.generate"]
+    monkeypatch.setitem(
+        runtime.CAPABILITY_REGISTRY,
+        "lyrics.generate",
+        type(entry)(
+            capability_id=entry.capability_id,
+            display_name=entry.display_name,
+            input_model=LyricsGenerateInput,
+            executor=lambda _inputs: {
+                "content": "# 夏夜",
+                "usage": {"model": "glm-4-flash", "prompt_tokens": 32, "completion_tokens": 40, "total_tokens": 72},
+            },
+        ),
+    )
+    result = run(
+        runtime.run_capability(
+            "lyrics.generate",
+            {"theme": "夏夜"},
+            context=CapabilityContext(user_id=7, project_id=None, source="standalone"),
+        )
+    )
+
+    assert result.status == "succeeded"
+    assert recorded, "usage repo 应收到一次成功记录"
+    args = recorded[0]["args"]
+    # (user_id, project_id, capability_id, source, model, prompt, completion, total, ...)
+    assert args[0] == 7
+    assert args[2] == "lyrics.generate"
+    assert args[5] == 32
+    assert args[7] == 72
+    assert args[8] == "succeeded"
+
+
+def test_runtime_records_failure_without_tokens(monkeypatch):
+    from schemas.capability import LyricsGenerateInput
+
+    recorded = []
+    monkeypatch.setattr(
+        runtime.usage_repo,
+        "insert",
+        lambda *args, **kwargs: recorded.append({"args": args, "kwargs": kwargs}) or {"id": 1},
+    )
+    entry = runtime.CAPABILITY_REGISTRY["lyrics.generate"]
+    monkeypatch.setitem(
+        runtime.CAPABILITY_REGISTRY,
+        "lyrics.generate",
+        type(entry)(
+            capability_id=entry.capability_id,
+            display_name=entry.display_name,
+            input_model=LyricsGenerateInput,
+            executor=lambda _inputs: (_ for _ in ()).throw(RuntimeError("provider exploded")),
+        ),
+    )
+    result = run(
+        runtime.run_capability(
+            "lyrics.generate",
+            {"theme": "夏夜"},
+            context=CapabilityContext(user_id=7, project_id=None, source="standalone"),
+        )
+    )
+
+    assert result.status == "failed"
+    assert recorded, "失败也必须入账，便于之后对账"
+    args = recorded[0]["args"]
+    assert args[5] == 0 and args[7] == 0  # prompt / total tokens 全是 0
+    assert args[8] == "failed"
+
+
 def test_runtime_hides_provider_error(monkeypatch):
     def fail(_inputs):
         raise RuntimeError("provider secret should not leave runtime")

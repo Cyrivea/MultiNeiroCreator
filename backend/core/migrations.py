@@ -279,6 +279,37 @@ def _m008_create_workflow_runs(conn: sqlite3.Connection) -> None:
     )
 
 
+def _m009_create_usage_events(conn: sqlite3.Connection) -> None:
+    """精确用量账本：每次能力调用记录 token、来源和状态，不给用户暴露上游细节。"""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS usage_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+            capability_id TEXT NOT NULL,
+            source TEXT NOT NULL CHECK (source IN ('standalone', 'assistant', 'workflow')),
+            model TEXT,
+            prompt_tokens INTEGER NOT NULL DEFAULT 0,
+            completion_tokens INTEGER NOT NULL DEFAULT 0,
+            total_tokens INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL CHECK (status IN ('succeeded', 'model_unavailable', 'failed')),
+            error TEXT,
+            duration_ms REAL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_usage_events_user_project "
+        "ON usage_events(user_id, project_id, created_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_usage_events_capability "
+        "ON usage_events(capability_id, created_at)"
+    )
+
+
 MIGRATIONS: list[Migration] = [
     ("baseline: users/messages/projects + indexes", _m001_baseline),
     ("add foreign keys via table rebuild", _m002_add_foreign_keys),
@@ -288,6 +319,7 @@ MIGRATIONS: list[Migration] = [
     ("add message citation metadata", _m006_add_message_citations),
     ("create workflow drafts", _m007_create_workflow_drafts),
     ("create workflow run/step ledger", _m008_create_workflow_runs),
+    ("create usage ledger", _m009_create_usage_events),
 ]
 
 

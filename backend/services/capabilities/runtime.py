@@ -10,12 +10,15 @@ import asyncio
 import contextlib
 import contextvars
 import logging
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from repositories import usage_repo
 from schemas.capability import CapabilityResult
 from services.capabilities.zhipu_text import ModelNotConfiguredError
 
@@ -34,7 +37,7 @@ class CapabilityEntry:
     capability_id: str
     display_name: str
     input_model: type[BaseModel]
-    executor: Callable[[BaseModel], str]
+    executor: Callable[[BaseModel], Any]
 
 
 _capability_context: contextvars.ContextVar[CapabilityContext | None] = contextvars.ContextVar(
@@ -56,7 +59,45 @@ def use_capability_context(context: CapabilityContext) -> Iterator[None]:
         _capability_context.reset(token)
 
 
-def _lyrics_executor(inputs: BaseModel) -> str:
+async def _record_usage(
+    capability_id: str,
+    context: CapabilityContext,
+    *,
+    model: str | None,
+    status: str,
+    error: str | None,
+    duration_ms: float,
+    usage: dict | None = None,
+) -> None:
+    """把一次能力调用写入账本。账本落库失败不能阻塞生成主链路。"""
+    if context.user_id is None:
+        return
+    try:
+        await asyncio.to_thread(
+            usage_repo.insert,
+            context.user_id,
+            context.project_id,
+            capability_id,
+            context.source,
+            model,
+            int(usage["prompt_tokens"]) if usage else 0,
+            int(usage["completion_tokens"]) if usage else 0,
+            int(usage["total_tokens"]) if usage else 0,
+            status,
+            error[:500] if error else None,
+            duration_ms,
+            datetime.now(UTC).isoformat(),
+        )
+    except Exception as exc:
+        logger.warning(
+            "用量记录写不进入处: %s",
+            type(exc).__name__,
+            extra={"evt": "usage_record_failed", "capability": capability_id},
+        )
+
+
+def _lyrics_executor(inputs: BaseModel) -> dict:
+    """真实 Provider 返回 {"content", "usage"}，Runtime 中心记录用量。"""
     from schemas.capability import LyricsGenerateInput
     from services.capabilities.zhipu_text import generate_lyrics_text
 
@@ -121,9 +162,18 @@ async def run_capability(
             "project_id": context.project_id,
         },
     )
+    started_at = time.perf_counter()
     try:
-        content = await asyncio.to_thread(entry.executor, validated)
+        output = await asyncio.to_thread(entry.executor, validated)
     except ModelNotConfiguredError:
+        await _record_usage(
+            capability_id,
+            context,
+            model=None,
+            status="model_unavailable",
+            error="模型尚未配置",
+            duration_ms=(time.perf_counter() - started_at) * 1000,
+        )
         logger.warning(
             "能力模型未配置",
             extra={
@@ -138,6 +188,14 @@ async def run_capability(
             error=f"{entry.display_name}模型尚未配置，请稍后再试",
         )
     except Exception as exc:
+        await _record_usage(
+            capability_id,
+            context,
+            model=None,
+            status="failed",
+            error=f"{type(exc).__name__}: {exc}",
+            duration_ms=(time.perf_counter() - started_at) * 1000,
+        )
         logger.exception(
             "能力执行失败",
             extra={
@@ -153,6 +211,19 @@ async def run_capability(
             error=f"{entry.display_name}生成失败，请稍后重试",
         )
 
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    usage = output.get("usage") if isinstance(output, dict) else None
+    content = output.get("content", "") if isinstance(output, dict) else output
+    await _record_usage(
+        capability_id,
+        context,
+        model=usage.get("model") if usage else None,
+        status="succeeded",
+        error=None,
+        duration_ms=duration_ms,
+        usage=usage,
+    )
+
     logger.info(
         "能力执行完成",
         extra={
@@ -161,7 +232,8 @@ async def run_capability(
             "source": context.source,
             "user_id": context.user_id,
             "project_id": context.project_id,
-            "result_chars": len(content),
+            "result_chars": len(content or ""),
+            "duration_ms": round(duration_ms, 1),
         },
     )
     return CapabilityResult(

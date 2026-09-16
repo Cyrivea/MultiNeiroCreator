@@ -32,8 +32,8 @@ def load_lyrics_model() -> Any | None:
     return ZhipuAI(api_key=config.API_KEY)
 
 
-def generate_lyrics_text(inputs: LyricsGenerateInput) -> str:
-    """同步调用智谱，调用方负责把它放入线程池。"""
+def generate_lyrics_text(inputs: LyricsGenerateInput) -> dict:
+    """同步调用智谱，调用方负责把它放入线程池；返回 {content, usage}，usage 供账本落库。"""
     model = load_lyrics_model()
     if model is None:
         raise ModelNotConfiguredError("歌词模型未配置")
@@ -58,4 +58,13 @@ def generate_lyrics_text(inputs: LyricsGenerateInput) -> str:
     content = response.choices[0].message.content if response.choices else None
     if not content or not content.strip():
         raise RuntimeError("歌词模型返回空内容")
-    return content.strip()
+    usage = getattr(response, "usage", None)
+    return {
+        "content": content.strip(),
+        "usage": {
+            "model": config.LYRICS_MODEL,
+            "prompt_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
+            "completion_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
+            "total_tokens": int(getattr(usage, "total_tokens", 0) or 0),
+        },
+    }
