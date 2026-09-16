@@ -38,6 +38,23 @@ TOOL_LIMIT_NOTICE = (
     "已达到本次对话的工具调用轮数上限，请基于已获得的信息直接给出最终回答，不要再请求任何工具。"
 )
 TOOL_SKIPPED_RESULT = "已超出单轮工具调用数量上限，本次调用未执行。请基于已有结果回答。"
+HOLLOW_CLAIM_NOTICE = (
+    "你刚才声称已经执行了画布/工作流操作，但实际上一个工具都没有调用。"
+    "要么立刻调用相应 Workflow 工具真正执行，要么明确告诉用户你无法执行，绝不许空谈。"
+)
+
+# 声明动作的谓词（模型空谈时喜欢说的话） + 创作请求的动词（过滤纯解释性回答）
+_ACTION_CLAIM_HINTS = ("已排队", "已开始", "已执行", "正在执行", "已配置", "已生成", "已连接到", "开始跑")
+_CREATIVE_VERBS = ("写", "生成", "做", "画", "创作", "出图", "出一张")
+
+
+def _claims_action_without_tools(message: str, reply: str, tools_used: list[str]) -> bool:
+    """模型声称动手了但一轮工具都没调：必须是创作类请求 + 回答里有动作谓词才算。"""
+    if tools_used or not reply.strip():
+        return False
+    if not any(verb in message for verb in _CREATIVE_VERBS):
+        return False
+    return any(hint in reply for hint in _ACTION_CLAIM_HINTS)
 WEB_SEARCH_TOOL_NAME = "search_web"
 TEXT_TOOL_CALL_MAX_LENGTH = 1200
 
@@ -246,6 +263,7 @@ async def _orchestrate(
     # 真实回执需要“谁成谁败”：记录每次工具调用的结果单摘要
     tool_outcomes: list[dict] = []
     tool_rounds = 0
+    hollow_claim_corrected = False
     llm_started = time.perf_counter()
     first_token_at: float | None = None
 
@@ -307,6 +325,19 @@ async def _orchestrate(
                 yield _sse({"type": "content", "content": textual_tool_candidate})
 
         if not pending_tool_calls:
+            # 空谈检测：模型凭空声称“已排队/已配置”却一个工具都没调——
+            # 给一次纠错机会（只补一轮），逼它要么真调用要么如实说做不到。
+            if not hollow_claim_corrected and _claims_action_without_tools(message, reply, tools_used):
+                hollow_claim_corrected = True
+                logger.warning(
+                    "检测到空谈式回复，自动触发纠错轮",
+                    extra={"evt": "hollow_claim", "reply_preview": reply[:120]},
+                )
+                messages.append({"role": "user", "content": message})
+                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "system", "content": HOLLOW_CLAIM_NOTICE})
+                reply = ""
+                continue
             break  # 模型不再要工具：本轮输出即最终回答
 
         tool_rounds += 1

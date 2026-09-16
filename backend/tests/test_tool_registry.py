@@ -18,6 +18,7 @@ def test_all_tools_discovered():
         "clear_workflow_draft",
         "read_workflow_state",
         "get_workflow_run_status",
+        "wait_for_workflow_completion",
         "run_current_workflow",
     }
     assert registry.capability_map == {
@@ -27,6 +28,7 @@ def test_all_tools_discovered():
         "clear_workflow_draft": "workflow.control",
         "read_workflow_state": "workflow.control",
         "get_workflow_run_status": "workflow.control",
+        "wait_for_workflow_completion": "workflow.control",
         "run_current_workflow": "workflow.control",
     }
 

@@ -72,14 +72,24 @@ def memory_repo(monkeypatch):
         }
         return copy.deepcopy(store[(user_id, project_id)])
 
-    monkeypatch.setattr(workflow_service, "workflow_repo", _RepoStub(get, upsert))
+    def upsert_if_revision(user_id, project_id, expected_revision, draft, _timestamp):
+        cur = store.get((user_id, project_id))
+        if cur is None:
+            if expected_revision != 0:
+                return None
+        elif cur["revision"] != expected_revision:
+            return None
+        return upsert(user_id, project_id, expected_revision + 1, draft, _timestamp)
+
+    monkeypatch.setattr(workflow_service, "workflow_repo", _RepoStub(get, upsert, upsert_if_revision))
     return store
 
 
 class _RepoStub:
-    def __init__(self, get, upsert):
+    def __init__(self, get, upsert, upsert_if_revision=None):
         self.get = get
         self.upsert = upsert
+        self.upsert_if_revision = upsert_if_revision
 
 
 def run(coro):
@@ -574,3 +584,22 @@ def test_reconfigure_reuses_node_without_duplicates(memory_repo):
     # 同一 capability 的入边仍只有 Input → 节点那一条
     inputs = [e for e in second["draft"]["edges"] if e["target"] == images[0]["id"]]
     assert len(inputs) == 1
+
+
+def test_cas_conflict_retries_and_succeeds(memory_repo, monkeypatch):
+    """CAS 冲突时重读重试，不整档覆盖也不放弃（丢更新事故根源防线）。"""
+    configure_lyrics(1, None, {"theme": "夏夜"})
+    calls = {"n": 0}
+    real = workflow_service.workflow_repo.upsert_if_revision
+
+    def flaky(user_id, project_id, expected_revision, draft, ts):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None  # 模拟第一次写入时别的写入者捷足先登
+        return real(user_id, project_id, expected_revision, draft, ts)
+
+    monkeypatch.setattr(workflow_service.workflow_repo, "upsert_if_revision", flaky)
+    result = workflow_service.configure_image(1, None, {"prompt": "出图", "style": "电影概念艺术"})
+    assert calls["n"] == 2
+    caps = [n.get("capability_id") for n in result["draft"]["nodes"]]
+    assert "image.generate" in caps and "lyrics.generate" in caps

@@ -8,9 +8,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import re
+import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -115,6 +118,31 @@ def get_draft(user_id: int, project_id: int | None) -> dict[str, Any]:
     if saved is None:
         return {"id": None, "revision": 0, "draft": empty_draft()}
     return {"id": saved["id"], "revision": saved["revision"], "draft": saved["draft"]}
+
+
+_MAX_CAS_RETRIES = 5
+
+
+def _mutate_draft_with_cas(
+    user_id: int,
+    project_id: int | None,
+    mutate: Callable[[dict[str, Any]], None],
+) -> dict[str, Any]:
+    """唯一合法的 Draft 写通道：读最新 → 业务修改 → CAS 写入，冲突重读重试。
+
+    运行期间 Runner 每节点回写 与 模型/用户中途 configure 必然并发；
+    没有乐观锁就是“最后一个整档覆盖的赢”，双节点/掉节点都是这里来的。
+    """
+    for _ in range(_MAX_CAS_RETRIES):
+        current = get_draft(user_id, project_id)
+        draft = copy.deepcopy(current["draft"])
+        mutate(draft)  # 这里的 raise（如连线护栏）会原样传出，不算冲突
+        saved = workflow_repo.upsert_if_revision(
+            user_id, project_id, current["revision"], draft, _now()
+        )
+        if saved is not None:
+            return {"id": saved["id"], "revision": saved["revision"], "draft": saved["draft"]}
+    raise AppError("画布正在被并发更新，请稍后重试", status_code=409)
 
 
 def save_draft(
@@ -229,69 +257,66 @@ def configure_capability(
         raise AppError(f"未知的生产能力: {capability_id}")
     params, referenced_upstream = _normalize_upstream_refs(params)
 
-    current = get_draft(user_id, project_id)
-    # 运行期间不允许增改拓扑：运行中的节点状态回写和配置变更会互相踩，
-    # 竞态还会造成同能力节点重复入库（实测出双图像节点）。先查进度等运行结束。
-    if get_active_run(user_id, current["id"]) is not None:
-        raise AppError(
-            "WORKFLOW_BUSY：画布正在运行，不能在此期间增改节点。"
-            "请先调用 get_workflow_run_status 查状态，等运行结束后再配置。",
-            status_code=409,
+    # 运行期间允许 configure（续命路径：模型可以在等上一跑结束后继续加节点），
+    # 但写入必须走 CAS：与 Runner 的每节点回写并发时丢更新 = 双图像节点事故的根因。
+    holder: dict[str, Any] = {}
+
+    def mutate(draft: dict[str, Any]) -> None:
+        nodes = draft.get("nodes", [])
+        # 同 capability 只保留一个实例：多余的连同连接线一起清除，避免并联残留
+        same_capability_ids = [
+            item.get("id")
+            for item in nodes
+            if isinstance(item, dict) and item.get("capability_id") == capability_id
+        ]
+        drop_ids = set(same_capability_ids[1:])
+        if drop_ids:
+            draft["nodes"] = [item for item in nodes if item.get("id") not in drop_ids]
+            draft["edges"] = [
+                edge
+                for edge in draft.get("edges", [])
+                if edge.get("source") not in drop_ids and edge.get("target") not in drop_ids
+            ]
+        node = next(
+            (item for item in draft.get("nodes", []) if item.get("capability_id") == capability_id),
+            None,
         )
-    draft = current["draft"]
-    nodes = draft.get("nodes", [])
-    # 同 capability 只保留一个实例：多余的连同连接线一起清除，避免并联残留
-    same_capability_ids = [
-        item.get("id")
-        for item in nodes
-        if isinstance(item, dict) and item.get("capability_id") == capability_id
-    ]
-    drop_ids = set(same_capability_ids[1:])
-    if drop_ids:
-        draft["nodes"] = [item for item in nodes if item.get("id") not in drop_ids]
-        draft["edges"] = [
-            edge
-            for edge in draft.get("edges", [])
-            if edge.get("source") not in drop_ids and edge.get("target") not in drop_ids
-        ]
-    node = next(
-        (item for item in draft.get("nodes", []) if item.get("capability_id") == capability_id),
-        None,
-    )
-    if node is None:
-        node = {
-            "id": f"workflow-node-{tool_type}-{uuid.uuid4().hex[:10]}",
-            "kind": "tool",
-            "toolId": f"assistant-{tool_type}-{uuid.uuid4().hex[:10]}",
-            "type": tool_type,
-            "capability_id": capability_id,
-            **meta,
-            "x": 320 + 300 * len(draft.get("nodes", [])),
-            "y": 280,
-        }
-        # capability meta 字段已包含 name/badge/description/color，去掉 type 重复
-        node.pop("type", None)
-        node["type"] = tool_type
-        draft.setdefault("nodes", []).append(node)
-    node["params"] = params
-    node["runStatus"] = "idle"
-    node["result"] = None
-    _wire_node(draft, node["id"], upstream_node_id)
-    if referenced_upstream:
-        inbound = [
-            edge
-            for edge in draft.get("edges", [])
-            if edge.get("target") == node["id"] and edge.get("source") != INPUT_ID
-        ]
-        if not inbound:
-            raise AppError(
-                "检测到参数引用了上游结果，但该节点没有任何上游连线，运行时无法取到歌词。"
-                "请先调用 read_workflow_state 读画布，再用 upstream_node_id=上游节点 id 串联后重试。",
-                status_code=422,
-            )
-    revision = current["revision"] + 1
-    saved = workflow_repo.upsert(user_id, project_id, revision, draft, _now())
-    return {"id": saved["id"], "revision": revision, "draft": draft, "node_id": node["id"]}
+        if node is None:
+            node = {
+                "id": f"workflow-node-{tool_type}-{uuid.uuid4().hex[:10]}",
+                "kind": "tool",
+                "toolId": f"assistant-{tool_type}-{uuid.uuid4().hex[:10]}",
+                "type": tool_type,
+                "capability_id": capability_id,
+                **meta,
+                "x": 320 + 300 * len(draft.get("nodes", [])),
+                "y": 280,
+            }
+            # capability meta 字段已包含 name/badge/description/color，去掉 type 重复
+            node.pop("type", None)
+            node["type"] = tool_type
+            draft.setdefault("nodes", []).append(node)
+        # 重新配置参数 => 旧结果作废；无论是否中途加进来，一律复位待跑
+        node["runStatus"] = "idle"
+        node["params"] = params
+        node["result"] = None
+        _wire_node(draft, node["id"], upstream_node_id)
+        if referenced_upstream:
+            inbound = [
+                edge
+                for edge in draft.get("edges", [])
+                if edge.get("target") == node["id"] and edge.get("source") != INPUT_ID
+            ]
+            if not inbound:
+                raise AppError(
+                    "检测到参数引用了上游结果，但该节点没有任何上游连线，运行时无法取到歌词。"
+                    "请先调用 read_workflow_state 读画布，再用 upstream_node_id=上游节点 id 串联后重试。",
+                    status_code=422,
+                )
+        holder["node_id"] = node["id"]
+
+    saved = _mutate_draft_with_cas(user_id, project_id, mutate)
+    return {"id": saved["id"], "revision": saved["revision"], "draft": saved["draft"], "node_id": holder["node_id"]}
 
 
 def configure_lyrics(
@@ -623,6 +648,31 @@ def get_run_status_detail(
     }
 
 
+async def await_workflow_idle(
+    user_id: int,
+    project_id: int | None,
+    timeout_seconds: float = 60.0,
+) -> dict[str, Any]:
+    """等当前项目工作区的活跃运行结束（最长 timeout），返回最终运行状态。
+
+    供“等它跑完再接着配/跑下一步”的编排使用；超时就如实返回 still_running，
+    绝不允许把模型卡在未知数上。
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        current = await asyncio.to_thread(get_draft, user_id, project_id)
+        active = await asyncio.to_thread(get_active_run, user_id, current["id"])
+        if active is None:
+            try:
+                return await asyncio.to_thread(
+                    get_run_status_detail, user_id, project_id, None
+                )
+            except AppError:
+                return {"status": "idle", "message": "画布上没有运行记录"}
+        await asyncio.sleep(2.0)
+    return {"status": "still_running", "message": f"超过 {timeout_seconds}s 仍在运行"}
+
+
 # ---------- 异步任务队列接入（submit → 后台 Worker 执行） ----------
 
 
@@ -702,9 +752,6 @@ async def _execute_snapshot_run(
     for node in ordered:
         # 每个节点执行前都重读最新 Draft：运行期间用户/AI 可能刚改过拓扑，
         # 只允许更新节点状态，坚决不回写 edges / nodes（避免“旧图盖新图”）。
-        current_live = await asyncio.to_thread(get_draft, user_id, project_id)
-        live_by_id = {n.get("id"): n for n in current_live["draft"].get("nodes", [])}
-
         resolved_params, params_error = _resolve_params(node, draft_snapshot, node_outputs)
         step = workflow_run_repo.create_step(
             step_id=f"step-{uuid.uuid4().hex[:12]}",
@@ -716,12 +763,24 @@ async def _execute_snapshot_run(
         )
         if params_error:
             workflow_run_repo.finish_step(step["id"], "failed", None, params_error)
-            live_node = live_by_id.get(node["id"])
-            if live_node is not None:
-                live_node["runStatus"] = "failed"
-                live_node["result"] = None
-                live_node["error"] = params_error
-                live_node["resolved_params"] = resolved_params
+
+            def write_params_error(
+                live_draft: dict[str, Any],
+                _node_id: str = str(node["id"]),
+                _error: str = params_error,
+                _resolved: dict[str, Any] = resolved_params,
+            ) -> None:
+                live = next(
+                    (n for n in live_draft.get("nodes", []) if str(n.get("id")) == _node_id),
+                    None,
+                )
+                if live is not None:
+                    live["runStatus"] = "failed"
+                    live["result"] = None
+                    live["error"] = _error
+                    live["resolved_params"] = _resolved
+
+            await asyncio.to_thread(_mutate_draft_with_cas, user_id, project_id, write_params_error)
             first_error = first_error or f"{node.get('name')}: {params_error}"
             final_status = "failed"
             continue
@@ -736,21 +795,25 @@ async def _execute_snapshot_run(
             result.result,
             result.error,
         )
-        live_node = live_by_id.get(node["id"])
-        if live_node is not None:
-            live_node["runStatus"] = result.status
-            live_node["result"] = result.result
-            live_node["error"] = result.error
-            live_node["resolved_params"] = resolved_params
-            _append_candidate(live_node, result)
-            await asyncio.to_thread(
-                workflow_repo.upsert,
-                user_id,
-                project_id,
-                current_live["revision"] + 1,
-                current_live["draft"],
-                _now(),
+        def write_status(
+            live_draft: dict[str, Any],
+            _node_id: str = str(node["id"]),
+            _result=result,
+            _resolved: dict[str, Any] = resolved_params,
+        ) -> None:
+            live = next(
+                (n for n in live_draft.get("nodes", []) if str(n.get("id")) == _node_id),
+                None,
             )
+            if live is None:
+                return
+            live["runStatus"] = _result.status
+            live["result"] = _result.result
+            live["error"] = _result.error
+            live["resolved_params"] = _resolved
+            _append_candidate(live, _result)
+
+        await asyncio.to_thread(_mutate_draft_with_cas, user_id, project_id, write_status)
         if result.result and result.result.get("content") is not None:
             node_outputs[node["id"]] = result.result
         if result.status != "succeeded":
@@ -778,15 +841,16 @@ def finalize_failed_run(
     但 UI 以为还在跑）。
     """
     workflow_run_repo.update_status(run_id, "failed", error=error[:500], finished_at=_now())
-    current = get_draft(user_id, project_id)
-    dirty = False
-    for node in current["draft"].get("nodes", []):
-        if node.get("runStatus") == "running":
-            node["runStatus"] = "failed"
-            node["error"] = error[:300]
-            dirty = True
-    if dirty:
-        workflow_repo.upsert(user_id, project_id, current["revision"] + 1, current["draft"], _now())
+
+    def mark_failed(draft: dict[str, Any]) -> None:
+        for node in draft.get("nodes", []):
+            if node.get("runStatus") == "running":
+                node["runStatus"] = "failed"
+                node["error"] = error[:300]
+
+    # 收尸失败不阻断主呼喊：CAS 耗尽时上层 job/retry 总会再试一次
+    with contextlib.suppress(AppError):
+        _mutate_draft_with_cas(user_id, project_id, mark_failed)
 
 
 def execute_workflow_run_job(

@@ -22,6 +22,7 @@ from schemas.capability import (
 )
 from services.capabilities import current_capability_context
 from services.workflow_service import (
+    await_workflow_idle,
     clear_workflow,
     configure_image,
     configure_lyrics,
@@ -118,7 +119,7 @@ def clear_workflow_draft() -> str:
 
     生成请求绝不能用这个工具；需要调整参数或节点时调用 configure_*，
     先看能否复用已有节点。
-    运行中的 Workflow 不应调用本工具；请先 get_workflow_run_status 看清状态。
+    运行中的 Workflow 不应调用本工具；请先 wait_for_workflow_completion 等运行结束。
     """
     execution = current_capability_context()
     cleared = clear_workflow(execution.user_id, execution.project_id)
@@ -161,6 +162,22 @@ def get_workflow_run_status(run_id: str | None = None) -> str:
             "message": "如实按总状态与节点步骤向用户汇报；失败要说出失败节点和原因。",
         }
     )
+
+
+@tool
+async def wait_for_workflow_completion(timeout_seconds: int = 60) -> str:
+    """等当前工作区正在跑的 Workflow 结束，然后返回最终状态。
+
+    典型场景：多步需求（歌词→曲绘）你先跑了 lyrics，又要补配图像节点时；与其告诉用户
+    "稍后再问"，不如直接调用本工具等它跑完（默认 60 秒、最长 90 秒），结束后继续接
+    configure_* / run_current_workflow。超时会如实返回，不会无限阻塞。
+    """
+    execution = current_capability_context()
+    result = await await_workflow_idle(
+        execution.user_id, execution.project_id, min(max(timeout_seconds, 5), 90)
+    )
+    return _json({"status": result.get("status"), "detail": result, "message":
+        "运行已结束/空闲的话，你可以立即继续配节点或重新运行。"})
 
 
 @tool

@@ -347,3 +347,18 @@ def test_receipt_empty_tools_falls_back():
     from services.chat.chat_orchestrator import _compose_action_receipt
 
     assert "换个说法" in _compose_action_receipt([])
+
+
+def test_hollow_claim_detector():
+    """创作请求里空谈动作=假，要纠错；解释性聊天空谈不算。"""
+    from services.chat.chat_orchestrator import _claims_action_without_tools
+
+    # 空谈：创作请求 + 排比谓词 + 零工具
+    assert _claims_action_without_tools("写首歌", "Workflow 已排队执行，画布会显示运行状态", [])
+    assert _claims_action_without_tools("生成一张图", "已配置图像节点", [])
+    # 已经真调过工具的不用纠
+    assert not _claims_action_without_tools("写首歌", "已排队执行", ["configure_lyrics_workflow"])
+    # 纯解释/科普不算空谈
+    assert not _claims_action_without_tools("画布是什么", "画布是编辑工作流的地方", [])
+    # 空回复走另一条兜底路，不该被这里拦
+    assert not _claims_action_without_tools("写首歌", "", [])
