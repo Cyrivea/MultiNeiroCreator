@@ -12,10 +12,12 @@ SSE 事件协议不变：content / tool / done / error，前端零改动。
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from fastapi import HTTPException
 from starlette.concurrency import iterate_in_threadpool
@@ -27,6 +29,7 @@ from repositories.chat_repo import append_message
 from services.capabilities import CapabilityContext, use_capability_context
 from services.chat.context_builder import build_chat_context
 from services.chat.tool_executor import execute_tool
+from services.workflow_service import reset_canvas_read_stamp
 
 # 模型名统一走环境变量（config.CHAT_MODEL），不在代码里写死
 CHAT_MODEL = config.CHAT_MODEL
@@ -253,6 +256,8 @@ async def _orchestrate(
         raise HTTPException(status_code=503, detail="未配置 API_KEY，聊天功能暂不可用")
 
     chat_started = time.perf_counter()
+    # 每轮对话独立重置“画布已读”印记：工具必须先读再改，跨轮不传递
+    reset_canvas_read_stamp()
     ctx = await build_chat_context(user["id"], message, project_id, attachments)
     messages = ctx.messages
 
@@ -266,128 +271,162 @@ async def _orchestrate(
     hollow_claim_corrected = False
     llm_started = time.perf_counter()
     first_token_at: float | None = None
+    stream: Any = None  # 上游 SSE 流对象（智谱 SDK Stream），中断时要 close 停止计费
 
-    # ReAct 主循环：前 MAX_TOOL_ROUNDS 轮允许工具；最后一轮强制"只许说话"收尾
-    for round_no in range(MAX_TOOL_ROUNDS + 1):
-        allow_tools = round_no < MAX_TOOL_ROUNDS
-        if not allow_tools:
-            # 走到这里说明前面每一轮模型都在要工具：明示上限，逼出最终回答
-            messages.append({"role": "system", "content": TOOL_LIMIT_NOTICE})
+    try:  # 中断收尸：客户端断开/任务取消时，半截回复要落库+打标，上游流要关（C14）
+        # ReAct 主循环：前 MAX_TOOL_ROUNDS 轮允许工具；最后一轮强制"只许说话"收尾
+        for round_no in range(MAX_TOOL_ROUNDS + 1):
+            allow_tools = round_no < MAX_TOOL_ROUNDS
+            if not allow_tools:
+                # 走到这里说明前面每一轮模型都在要工具：明示上限，逼出最终回答
+                messages.append({"role": "system", "content": TOOL_LIMIT_NOTICE})
 
-        request_kwargs: dict = {"model": CHAT_MODEL, "messages": messages, "stream": True}
-        if allow_tools:
-            request_kwargs["tools"] = available_tools
-        stream = await asyncio.to_thread(client.chat.completions.create, **request_kwargs)
+            request_kwargs: dict = {"model": CHAT_MODEL, "messages": messages, "stream": True}
+            if allow_tools:
+                request_kwargs["tools"] = available_tools
+            stream = await asyncio.to_thread(client.chat.completions.create, **request_kwargs)
 
-        pending_tool_calls: dict[int, dict] = {}
-        textual_tool_candidate = ""
-        # 兼容少数模型/代理把 function calling 错误降级成普通文本的情况。
-        # 只暂存“像工具名开头”的前缀，普通回答仍逐 chunk 流出。
-        async for chunk in iterate_in_threadpool(stream):
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-            delta_calls = getattr(delta, "tool_calls", None)
-            if delta_calls:
-                if textual_tool_candidate:
-                    fallback_call = parse_textual_tool_call(textual_tool_candidate)
-                    if not fallback_call:
-                        reply += textual_tool_candidate
-                        yield _sse({"type": "content", "content": textual_tool_candidate})
-                    textual_tool_candidate = ""
-                merge_tool_call_delta(pending_tool_calls, delta_calls)
-                continue
-            content = extract_stream_content(chunk)
-            if content:
-                if textual_tool_candidate:
-                    textual_tool_candidate += content
-                elif _could_be_textual_tool_call_prefix(content):
-                    textual_tool_candidate = content
+            pending_tool_calls: dict[int, dict] = {}
+            textual_tool_candidate = ""
+            # 兼容少数模型/代理把 function calling 错误降级成普通文本的情况。
+            # 只暂存“像工具名开头”的前缀，普通回答仍逐 chunk 流出。
+            async for chunk in iterate_in_threadpool(stream):
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                delta_calls = getattr(delta, "tool_calls", None)
+                if delta_calls:
+                    if textual_tool_candidate:
+                        fallback_call = parse_textual_tool_call(textual_tool_candidate)
+                        if not fallback_call:
+                            reply += textual_tool_candidate
+                            yield _sse({"type": "content", "content": textual_tool_candidate})
+                        textual_tool_candidate = ""
+                    merge_tool_call_delta(pending_tool_calls, delta_calls)
+                    continue
+                content = extract_stream_content(chunk)
+                if content:
+                    if textual_tool_candidate:
+                        textual_tool_candidate += content
+                    elif _could_be_textual_tool_call_prefix(content):
+                        textual_tool_candidate = content
+                    else:
+                        if first_token_at is None:
+                            first_token_at = time.perf_counter()
+                        reply += content
+                        yield _sse({"type": "content", "content": content})
+
+            if textual_tool_candidate:
+                fallback_call = parse_textual_tool_call(textual_tool_candidate)
+                if fallback_call and not pending_tool_calls:
+                    tool_name, arguments = fallback_call
+                    pending_tool_calls[0] = {
+                        "id": f"text-call-{round_no}",
+                        "name": tool_name,
+                        "arguments": arguments,
+                    }
                 else:
                     if first_token_at is None:
                         first_token_at = time.perf_counter()
-                    reply += content
-                    yield _sse({"type": "content", "content": content})
+                    reply += textual_tool_candidate
+                    yield _sse({"type": "content", "content": textual_tool_candidate})
 
-        if textual_tool_candidate:
-            fallback_call = parse_textual_tool_call(textual_tool_candidate)
-            if fallback_call and not pending_tool_calls:
-                tool_name, arguments = fallback_call
-                pending_tool_calls[0] = {
-                    "id": f"text-call-{round_no}",
-                    "name": tool_name,
-                    "arguments": arguments,
+            if not pending_tool_calls:
+                # 空谈检测：模型凭空声称“已排队/已配置”却一个工具都没调——
+                # 给一次纠错机会（只补一轮），逼它要么真调用要么如实说做不到。
+                if not hollow_claim_corrected and _claims_action_without_tools(message, reply, tools_used):
+                    hollow_claim_corrected = True
+                    logger.warning(
+                        "检测到空谈式回复，自动触发纠错轮",
+                        extra={"evt": "hollow_claim", "reply_preview": reply[:120]},
+                    )
+                    messages.append({"role": "user", "content": message})
+                    messages.append({"role": "assistant", "content": reply})
+                    messages.append({"role": "system", "content": HOLLOW_CLAIM_NOTICE})
+                    reply = ""
+                    continue
+                break  # 模型不再要工具：本轮输出即最终回答
+
+            tool_rounds += 1
+            tool_calls = [pending_tool_calls[i] for i in sorted(pending_tool_calls)]
+            messages.append(
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": call["id"],
+                            "type": "function",
+                            "function": {"name": call["name"], "arguments": call["arguments"]},
+                        }
+                        for call in tool_calls
+                    ],
                 }
-            else:
-                if first_token_at is None:
-                    first_token_at = time.perf_counter()
-                reply += textual_tool_candidate
-                yield _sse({"type": "content", "content": textual_tool_candidate})
+            )
+            for position, call in enumerate(tool_calls):
+                if position >= MAX_TOOL_CALLS_PER_ROUND:
+                    # 超额调用不执行，但必须应答该 tool_call_id，否则下一轮请求非法
+                    messages.append({"role": "tool", "content": TOOL_SKIPPED_RESULT, "tool_call_id": call["id"]})
+                    continue
+                yield _sse({"type": "tool", "tool_name": call["name"]})
+                # 跑腿的绝不抛异常：成功/被拒/失败都是一张结果单，这里不分叉
+                with use_capability_context(
+                    CapabilityContext(
+                        user_id=user["id"],
+                        project_id=project_id,
+                        source="assistant",
+                        user_message=message,
+                    )
+                ):
+                    outcome = await execute_tool(call["name"], call["arguments"])
+                # 工具可以携带界面事件（如 Workflow Draft 快照），立即透传给前端；
+                # 剥离后再回填模型，避免模型把 Draft 当成歌词内容。
+                model_result, ui_events = split_ui_events(outcome.result)
+                for ui_event in ui_events:
+                    yield _sse(ui_event)
+                tools_used.append(call["name"])
+                tool_outcomes.append(_summarize_tool_outcome(call["name"], outcome, model_result))
+                messages.append({"role": "tool", "content": model_result, "tool_call_id": call["id"]})
 
-        if not pending_tool_calls:
-            # 空谈检测：模型凭空声称“已排队/已配置”却一个工具都没调——
-            # 给一次纠错机会（只补一轮），逼它要么真调用要么如实说做不到。
-            if not hollow_claim_corrected and _claims_action_without_tools(message, reply, tools_used):
-                hollow_claim_corrected = True
-                logger.warning(
-                    "检测到空谈式回复，自动触发纠错轮",
-                    extra={"evt": "hollow_claim", "reply_preview": reply[:120]},
-                )
-                messages.append({"role": "user", "content": message})
-                messages.append({"role": "assistant", "content": reply})
-                messages.append({"role": "system", "content": HOLLOW_CLAIM_NOTICE})
-                reply = ""
-                continue
-            break  # 模型不再要工具：本轮输出即最终回答
+        tool_used = tools_used[-1] if tools_used else None
 
-        tool_rounds += 1
-        tool_calls = [pending_tool_calls[i] for i in sorted(pending_tool_calls)]
-        messages.append(
-            {
-                "role": "assistant",
-                "tool_calls": [
-                    {
-                        "id": call["id"],
-                        "type": "function",
-                        "function": {"name": call["name"], "arguments": call["arguments"]},
-                    }
-                    for call in tool_calls
-                ],
-            }
+        # 空气泡根治：模型调完工具后可能最终一个字也不说（实测线上历史出现
+        # content="" 的 assistant 消息，前端显示成永久空白气泡）。
+        # 为空时合成“诚实的回执”：谁成了、谁败了、为什么，绝不能把被拒的调用
+        # 伪装成已执行（用户实测：回执自称调用了图像配置，画布上根本没有节点）。
+        if not reply.strip():
+            reply = _compose_action_receipt(tool_outcomes)
+            yield _sse({"type": "content", "content": reply})
+    except (GeneratorExit, asyncio.CancelledError):
+        # GeneratorExit/CancelledError 不走 except Exception 通道，必须单独拦：
+        # 关上游流（停止继续计费）+ 落库半截回复（用户重进还能看到）
+        logger.warning(
+            "对话流被中断，保存半截回复",
+            extra={
+                "evt": "chat_stream_interrupted",
+                "reply_chars": len(reply),
+                "tools_used": tools_used,
+                "duration_ms": round((time.perf_counter() - chat_started) * 1000, 1),
+            },
         )
-        for position, call in enumerate(tool_calls):
-            if position >= MAX_TOOL_CALLS_PER_ROUND:
-                # 超额调用不执行，但必须应答该 tool_call_id，否则下一轮请求非法
-                messages.append({"role": "tool", "content": TOOL_SKIPPED_RESULT, "tool_call_id": call["id"]})
-                continue
-            yield _sse({"type": "tool", "tool_name": call["name"]})
-            # 跑腿的绝不抛异常：成功/被拒/失败都是一张结果单，这里不分叉
-            with use_capability_context(
-                CapabilityContext(
-                    user_id=user["id"],
-                    project_id=project_id,
-                    source="assistant",
-                )
-            ):
-                outcome = await execute_tool(call["name"], call["arguments"])
-            # 工具可以携带界面事件（如 Workflow Draft 快照），立即透传给前端；
-            # 剥离后再回填模型，避免模型把 Draft 当成歌词内容。
-            model_result, ui_events = split_ui_events(outcome.result)
-            for ui_event in ui_events:
-                yield _sse(ui_event)
-            tools_used.append(call["name"])
-            tool_outcomes.append(_summarize_tool_outcome(call["name"], outcome, model_result))
-            messages.append({"role": "tool", "content": model_result, "tool_call_id": call["id"]})
-
-    tool_used = tools_used[-1] if tools_used else None
-
-    # 空气泡根治：模型调完工具后可能最终一个字也不说（实测线上历史出现
-    # content="" 的 assistant 消息，前端显示成永久空白气泡）。
-    # 为空时合成“诚实的回执”：谁成了、谁败了、为什么，绝不能把被拒的调用
-    # 伪装成已执行（用户实测：回执自称调用了图像配置，画布上根本没有节点）。
-    if not reply.strip():
-        reply = _compose_action_receipt(tool_outcomes)
-        yield _sse({"type": "content", "content": reply})
+        if stream is not None:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(close)
+        await asyncio.to_thread(
+            append_message, user["id"], "user", ctx.persist_text, project_id, ctx.attachments
+        )
+        await asyncio.to_thread(
+            append_message,
+            user["id"],
+            "assistant",
+            reply.strip() or "（本轮回复尚未产出内容就被中断）",
+            project_id,
+            None,
+            None,
+            True,
+        )
+        raise
 
     clean_history = ctx.clean_history
     await asyncio.to_thread(

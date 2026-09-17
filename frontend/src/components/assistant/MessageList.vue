@@ -34,6 +34,9 @@
           </span>
         </template>
         <template v-else>{{ message.content }}</template>
+        <span v-if="message.interrupted" class="agent-interrupted-mark" title="生成中途被断开">
+          （回复被中断，内容不完整）
+        </span>
       </div>
       <div v-if="message.citations?.length" class="agent-message-citations">
         <div class="agent-citation-title">引用来源</div>
@@ -208,6 +211,13 @@ const visibleMessages = computed(() =>
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.agent-interrupted-mark {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+  color: #f0a860;
 }
 
 .agent-message-bubble.is-pending {

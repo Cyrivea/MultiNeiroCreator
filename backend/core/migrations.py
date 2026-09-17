@@ -310,6 +310,14 @@ def _m009_create_usage_events(conn: sqlite3.Connection) -> None:
     )
 
 
+def _m010_add_message_interrupted(conn: sqlite3.Connection) -> None:
+    """SSE 断连截断标记：消息可能只生成了一半（客户端断开/上游中断），
+    落库时必须带标，否则用户重进看到的是一条莫名的话。"""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(messages)")]
+    if "interrupted" not in cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN interrupted INTEGER NOT NULL DEFAULT 0")
+
+
 MIGRATIONS: list[Migration] = [
     ("baseline: users/messages/projects + indexes", _m001_baseline),
     ("add foreign keys via table rebuild", _m002_add_foreign_keys),
@@ -320,6 +328,7 @@ MIGRATIONS: list[Migration] = [
     ("create workflow drafts", _m007_create_workflow_drafts),
     ("create workflow run/step ledger", _m008_create_workflow_runs),
     ("create usage ledger", _m009_create_usage_events),
+    ("add message interrupted flag", _m010_add_message_interrupted),
 ]
 
 

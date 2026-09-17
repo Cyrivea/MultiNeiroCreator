@@ -362,3 +362,24 @@ def test_hollow_claim_detector():
     assert not _claims_action_without_tools("画布是什么", "画布是编辑工作流的地方", [])
     # 空回复走另一条兜底路，不该被这里拦
     assert not _claims_action_without_tools("写首歌", "", [])
+
+
+def test_chat_repo_interrupted_roundtrip(tmp_path, monkeypatch):
+    """c14：中断标记随消息落库并正确读回，正常消息默认 False。"""
+    import core.database as database
+    from core.migrations import run_migrations
+    from repositories import chat_repo
+
+    monkeypatch.setattr(database, "DB_FILE", tmp_path / "t.db")
+    run_migrations()
+    with database.db_connection() as conn:
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, profile, created_at) "
+            "VALUES (800, 'c14@local', 'x', '', '2026-01-01')"
+        )
+
+    chat_repo.append_message(800, "assistant", "半截回复", None, interrupted=True)
+    chat_repo.append_message(800, "assistant", "完整回复", None)
+    history = chat_repo.list_history(800, None)
+    assert history[0]["interrupted"] is True
+    assert "interrupted" not in history[1]

@@ -22,6 +22,8 @@ export interface AgentHistoryItem {
   content: string
   attachments?: AgentAttachmentItem[]
   citations?: AgentCitation[]
+  /** 服务端标记：该消息生成中途被断开（上游/客户端中断），可与完整消息区别展示 */
+  interrupted?: boolean
 }
 
 export interface AgentChatPayload {

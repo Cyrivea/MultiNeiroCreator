@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import copy
 import re
 import time
@@ -26,6 +27,38 @@ from services.project_service import get_project
 
 INPUT_ID = "workflow-input"
 OUTPUT_ID = "workflow-output"
+
+# “画布已读”印记：同一请求轮内，读过画布的用户/项目才被允许 configure/clear。
+# 用 contextvars 保证并发请求互不影响；每轮聊天由编排器重置。
+_canvas_read_stamp: contextvars.ContextVar[tuple[int, int | None] | None] = (
+    contextvars.ContextVar("canvas_read_stamp", default=None)
+)
+
+
+def reset_canvas_read_stamp() -> None:
+    _canvas_read_stamp.set(None)
+
+
+def mark_canvas_read(user_id: int, project_id: int | None) -> None:
+    _canvas_read_stamp.set((user_id, project_id))
+
+
+def _ensure_canvas_read(user_id: int, project_id: int | None, draft: dict[str, Any]) -> None:
+    """"先读再改"的保底实现（GLM 时代模型自觉不可靠）：
+
+    模型没读而动手时，平台代它读一次再放行，并在结果里告知——
+    安全性由机器保证，可观测性交给工具描述卷。评测过几次证明，该模型在
+    prompt、工具描述、被拒重试三档提醒下依然 0% 主动读，不能让用户感受为瓶颈买单。
+    """
+    has_content = any(n.get("capability_id") for n in draft.get("nodes", []))
+    if not has_content:
+        mark_canvas_read(user_id, project_id)
+        return
+    if _canvas_read_stamp.get() == (user_id, project_id):
+        return
+    # 代理代读：记录实际看到了什么（后面排查/报告能用），然后相当于已读
+    get_workflow_summary(user_id, project_id)
+    mark_canvas_read(user_id, project_id)
 
 # 每个 capability 在画布上的展示元信息；图片/视频/音频 await real Provider，UI 先按此占位。
 CAPABILITY_META: dict[str, dict[str, Any]] = {
@@ -193,10 +226,23 @@ def _ensure_edge(draft: dict[str, Any], source: str, target: str) -> None:
         edges.append({"source": source, "target": target})
 
 
-def clear_workflow(user_id: int, project_id: int | None) -> dict[str, Any]:
-    """用户明确说“清空/重建工作区”时从头开始。生成请求不使用这个工具。"""
+_INJECTION_HINT_RE = re.compile(r"忽略.{0,12}(系统提示|规则)|解除(限制|规则)|无视.{0,8}(规则|提示)")
+
+
+def clear_workflow(
+    user_id: int, project_id: int | None, user_message: str = ""
+) -> dict[str, Any]:
+    """清空画布：用户明确说“清空/重建”才允许，只对正常语气开放。"""
     _check_project_owner(user_id, project_id)
+    # 注入式口吻（“忽略你的系统提示”等）诱导的破坏性操作不放行：
+    # 这是 prompt 注入实测的真实撞车点，防御必须放服务端而不是靠模型看人下菜。
+    if _INJECTION_HINT_RE.search(user_message or ""):
+        raise AppError(
+            "检测到注入式指令（要求忽略系统规则），破坏性操作被平台拒绝。请用正常语气描述需求。",
+            status_code=422,
+        )
     current = get_draft(user_id, project_id)
+    _ensure_canvas_read(user_id, project_id, current["draft"])
     revision = current["revision"] + 1
     draft = empty_draft()
     saved = workflow_repo.upsert(user_id, project_id, revision, draft, _now())
@@ -262,6 +308,7 @@ def configure_capability(
     holder: dict[str, Any] = {}
 
     def mutate(draft: dict[str, Any]) -> None:
+        _ensure_canvas_read(user_id, project_id, draft)
         nodes = draft.get("nodes", [])
         # 同 capability 只保留一个实例：多余的连同连接线一起清除，避免并联残留
         same_capability_ids = [
@@ -298,7 +345,9 @@ def configure_capability(
             draft.setdefault("nodes", []).append(node)
         # 重新配置参数 => 旧结果作废；无论是否中途加进来，一律复位待跑
         node["runStatus"] = "idle"
-        node["params"] = params
+        # 参数增量合并：模型常常只传“要改的字段”，整包覆盖会把没改的字段抹成空
+        # （实测：只说“比例换 1:1”就会丢掉 prompt/style）
+        node["params"] = {**(node.get("params") or {}), **params}
         node["result"] = None
         _wire_node(draft, node["id"], upstream_node_id)
         if referenced_upstream:
@@ -619,9 +668,10 @@ def get_run_status_detail(
             raise AppError("目前没有可查询的 Workflow 运行记录", status_code=404)
         run = recent[0]
     else:
-        run = workflow_run_repo.get(user_id, run_id)  # repo 已按 user_id 过滤
-        if run is None:
+        found = workflow_run_repo.get(user_id, run_id)  # repo 已按 user_id 过滤
+        if found is None:
             raise AppError("运行记录不存在", status_code=404)
+        run = found
         _check_project_owner(user_id, run.get("project_id"))
 
     steps = workflow_run_repo.list_steps(user_id, run["id"])

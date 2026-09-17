@@ -34,6 +34,7 @@ def _create_user(user_id: int) -> None:
 
 
 def _configure_lyrics(user_id: int):
+    workflow_service.mark_canvas_read(user_id, None)
     return workflow_service.configure_lyrics(
         user_id, None, {"theme": "失恋", "style": "流行抒情", "mood": "忧郁、克制", "language": "中文"}
     )
@@ -132,6 +133,7 @@ def test_configure_allowed_during_run_via_cas(real_db):
     submission = submit_workflow_run(user, None)  # run queued = active
 
     # 运行期间配图像：不拒绝，节点应能进画布，并与歌词串联后两者都在
+    workflow_service.mark_canvas_read(user, None)
     image = workflow_service.configure_image(
         user,
         None,

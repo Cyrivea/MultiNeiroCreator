@@ -30,6 +30,8 @@ class CapabilityContext:
     user_id: int
     project_id: int | None
     source: str
+    # 本轮用户原话：供工具做上下文敏感的安全检查（如注入式清空）
+    user_message: str = ""
 
 
 @dataclass(frozen=True)

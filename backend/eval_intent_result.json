@@ -2,24 +2,22 @@
   "meta": {
     "model": "glm-4-flash",
     "dry_run": false,
-    "case_count": 16,
-    "pass_count": 16,
+    "case_count": 2,
+    "pass_count": 2,
     "pass_rate": 100.0
   },
   "cases": [
     {
-      "name": "单独写歌词",
+      "name": "轻松口吻的创作诉求也走画布",
       "attempt": 1,
-      "user": "帮我写一首关于夏天海边的歌",
+      "user": "写一首关于凌晨四点的短歌词",
       "ok": true,
       "errors": [],
       "calls": [
         [
           "configure_lyrics_workflow",
           {
-            "theme": "夏天海边",
-            "style": "流行抒情",
-            "mood": "明亮、轻快",
+            "theme": "凌晨四点",
             "language": "中文"
           }
         ],
@@ -38,36 +36,32 @@
           {}
         ],
         [
-          "configure_image_workflow",
+          "configure_lyrics_workflow",
           {
-            "prompt": "${upstream.result.content}",
-            "style": "电影概念艺术",
-            "ratio": "16:9",
-            "palette": "深蓝与紫色"
+            "theme": "凌晨四点",
+            "language": "中文"
           }
         ],
         [
-          "read_workflow_state",
+          "run_current_workflow",
           {}
         ]
       ],
       "reply": "",
-      "duration_ms": 14110.7
+      "duration_ms": 13447.3
     },
     {
-      "name": "换风格重跑歌词（已有歌词节点）",
-      "attempt": 1,
-      "user": "把刚才那首换成摇滚风格再生成一次",
+      "name": "轻松口吻的创作诉求也走画布",
+      "attempt": 2,
+      "user": "写一首关于凌晨四点的短歌词",
       "ok": true,
       "errors": [],
       "calls": [
         [
           "configure_lyrics_workflow",
           {
-            "theme": "刚才那首",
-            "style": "摇滚叙事",
-            "language": "中文",
-            "mood": "热烈、昂扬"
+            "theme": "凌晨四点",
+            "language": "中文"
           }
         ],
         [
@@ -76,364 +70,23 @@
         ],
         [
           "get_workflow_run_status",
-          {}
+          {
+            "run_id": "run-eval-1"
+          }
         ],
         [
           "wait_for_workflow_completion",
           {}
         ],
         [
-          "configure_image_workflow",
-          {
-            "prompt": "${upstream.result.content}",
-            "style": "电影概念艺术",
-            "ratio": "16:9",
-            "palette": "深蓝与紫色"
-          }
-        ],
-        [
-          "configure_image_workflow",
-          {
-            "prompt": "${upstream.result.content}",
-            "style": "电影概念艺术",
-            "ratio": "16:9",
-            "palette": "深蓝与紫色",
-            "upstream_node_id": "workflow-node-lyrics-0001"
-          }
-        ]
-      ],
-      "reply": "",
-      "duration_ms": 19727.3
-    },
-    {
-      "name": "串联：歌词→曲绘",
-      "attempt": 1,
-      "user": "写个失恋主题的歌词，再根据歌词内容串联生成一张曲绘",
-      "ok": true,
-      "errors": [],
-      "calls": [
-        [
-          "configure_lyrics_workflow",
-          {
-            "theme": "失恋",
-            "style": "流行抒情",
-            "mood": "忧郁、克制",
-            "language": "中文"
-          }
-        ],
-        [
-          "configure_image_workflow",
-          {
-            "prompt": "${workflow-node-lyrics-0001.result.content}",
-            "style": "电影概念艺术",
-            "ratio": "16:9",
-            "palette": "深蓝与紫色"
-          }
-        ],
-        [
-          "read_workflow_state",
-          {}
-        ],
-        [
-          "configure_image_workflow",
-          {
-            "prompt": "${workflow-node-lyrics-0001.result.content}",
-            "style": "电影概念艺术",
-            "ratio": "16:9",
-            "palette": "深蓝与紫色",
-            "upstream_node_id": "workflow-node-lyrics-0001"
-          }
-        ],
-        [
-          "run_current_workflow",
-          {}
-        ],
-        [
-          "wait_for_workflow_completion",
-          {
-            "timeout_seconds": 60
-          }
-        ]
-      ],
-      "reply": "",
-      "duration_ms": 19213.9
-    },
-    {
-      "name": "串联（先 A 后 B 口吻）",
-      "attempt": 1,
-      "user": "先帮我写段副歌歌词，写完直接拿去做封面图",
-      "ok": true,
-      "errors": [],
-      "calls": [
-        [
-          "configure_lyrics_workflow",
-          {
-            "theme": "副歌",
-            "style": "流行抒情",
-            "mood": "热烈、昂扬",
-            "language": "中文"
-          }
-        ],
-        [
-          "configure_image_workflow",
-          {
-            "prompt": "${workflow-node-lyrics-0001.result.content}",
-            "style": "电影概念艺术",
-            "ratio": "16:9",
-            "palette": "深蓝与紫色"
-          }
-        ],
-        [
-          "read_workflow_state",
-          {}
-        ],
-        [
-          "configure_image_workflow",
-          {
-            "prompt": "${workflow-node-lyrics-0001.result.content}",
-            "style": "电影概念艺术",
-            "ratio": "16:9",
-            "palette": "深蓝与紫色",
-            "upstream_node_id": "workflow-node-lyrics-0001"
-          }
-        ],
-        [
-          "run_current_workflow",
-          {}
-        ],
-        [
           "get_workflow_run_status",
-          {}
-        ]
-      ],
-      "reply": "",
-      "duration_ms": 14431.5
-    },
-    {
-      "name": "追问进度（画布在跑）",
-      "attempt": 1,
-      "user": "跑得怎么样了？",
-      "ok": true,
-      "errors": [],
-      "calls": [
-        [
-          "get_workflow_run_status",
-          {}
-        ]
-      ],
-      "reply": "当前工作流正在运行中，已经完成了 2/3 的步骤。其中，输入和输出节点尚未开始运行，而歌词生成节点正在运行中。请您耐心等待。",
-      "duration_ms": 4717.5
-    },
-    {
-      "name": "用户说继续但还在跑（不许重复提交）",
-      "attempt": 1,
-      "user": "继续",
-      "ok": true,
-      "errors": [],
-      "calls": [
-        [
-          "wait_for_workflow_completion",
           {
-            "timeout_seconds": 60
+            "run_id": "run-eval-1"
           }
         ]
       ],
-      "reply": "运行已结束，你可以继续配置节点或重新运行。",
-      "duration_ms": 6811.2
-    },
-    {
-      "name": "问画布状态",
-      "attempt": 1,
-      "user": "画布上现在有哪些节点？",
-      "ok": true,
-      "errors": [],
-      "calls": [
-        [
-          "read_workflow_state",
-          {}
-        ]
-      ],
-      "reply": "画布上现在有以下节点：\n\n1. 输入\n2. 输出\n3. lyrics生成（夏夜）\n\n其中，\"lyrics生成\"节点已经成功生成歌词。",
-      "duration_ms": 5724.6
-    },
-    {
-      "name": "明确清空重建",
-      "attempt": 1,
-      "user": "全都不要了，清空画布，我要重新搭",
-      "ok": true,
-      "errors": [],
-      "calls": [
-        [
-          "clear_workflow_draft",
-          {}
-        ]
-      ],
-      "reply": "已清空画布，您可以开始重新搭建您的创作流程。",
-      "duration_ms": 3787.7
-    },
-    {
-      "name": "含糊“再来一版”（无任何上下文）",
-      "attempt": 1,
-      "user": "再来一版",
-      "ok": true,
-      "errors": [],
-      "calls": [],
-      "reply": "好的，请告诉我您需要什么样的内容或服务，我会尽力帮助您。",
-      "duration_ms": 2287.3
-    },
-    {
-      "name": "含糊“把它改得更好听点”（无可指代对象）",
-      "attempt": 1,
-      "user": "把它改得更好听一点",
-      "ok": true,
-      "errors": [],
-      "calls": [],
-      "reply": "为了更好地改进歌词，请提供当前的歌词内容，我将根据您的要求进行调整。",
-      "duration_ms": 2510.1
-    },
-    {
-      "name": "纯聊天不碰工作流",
-      "attempt": 1,
-      "user": "副歌和主歌在结构上一般怎么区分？",
-      "ok": true,
-      "errors": [],
-      "calls": [],
-      "reply": "副歌和主歌在音乐结构上的区分主要基于以下几个方面：\n\n1. **出现频率**：\n   - **主歌**：通常是歌曲的主体部分，出现频率较高，负责讲述故事或传达歌曲的主题。\n   - **副歌**：出现频率相对较低，但通常在歌曲的关键部分出现，如歌曲的结尾或高潮部分。\n\n2. **旋律和节奏**：\n   - **主歌**",
-      "duration_ms": 23069.0
-    },
-    {
-      "name": "改歌词主题重跑",
-      "attempt": 1,
-      "user": "把主题改成告别再生成一版",
-      "ok": true,
-      "errors": [],
-      "calls": [
-        [
-          "configure_lyrics_workflow",
-          {
-            "theme": "告别",
-            "language": "中文",
-            "mood": "温柔、克制",
-            "style": "流行抒情"
-          }
-        ],
-        [
-          "run_current_workflow",
-          {}
-        ],
-        [
-          "get_workflow_run_status",
-          {}
-        ]
-      ],
-      "reply": "Workflow 正在执行中，当前进度为 2/3，其中歌词生成节点正在运行。请稍等片刻。",
-      "duration_ms": 9490.5
-    },
-    {
-      "name": "并联口吻（同时做歌词和海报）",
-      "attempt": 1,
-      "user": "歌词和海报同时帮我做一下",
-      "ok": true,
-      "errors": [],
-      "calls": [
-        [
-          "configure_lyrics_workflow",
-          {
-            "theme": "爱情故事",
-            "style": "流行抒情",
-            "mood": "温柔、克制",
-            "language": "中文"
-          }
-        ],
-        [
-          "configure_image_workflow",
-          {
-            "prompt": "一个浪漫的爱情故事，画面风格为电影概念艺术，色彩方向为深蓝与紫色，画面比例为16:9，引用歌词内容作为画面描述。",
-            "style": "电影概念艺术",
-            "palette": "深蓝与紫色",
-            "ratio": "16:9",
-            "upstream_node_id": "workflow-node-lyrics-0001"
-          }
-        ],
-        [
-          "run_current_workflow",
-          {}
-        ]
-      ],
-      "reply": "已为您同时配置好歌词生成节点和海报生成节点，并将它们排入后台执行队列。您可以随时追问进度。",
-      "duration_ms": 17001.5
-    },
-    {
-      "name": "历史失败不冻结：上次曲绘没模型，这次重试歌词要能跑",
-      "attempt": 1,
-      "user": "歌词再给我出一版，主题换成海边",
-      "ok": true,
-      "errors": [],
-      "calls": [
-        [
-          "configure_lyrics_workflow",
-          {
-            "theme": "海边",
-            "language": "中文",
-            "mood": "忧郁、克制",
-            "style": "流行抒情"
-          }
-        ],
-        [
-          "configure_image_workflow",
-          {
-            "prompt": "${upstream.result.content}",
-            "style": "电影概念艺术",
-            "palette": "暖金",
-            "ratio": "16:9"
-          }
-        ],
-        [
-          "run_current_workflow",
-          {}
-        ]
-      ],
-      "reply": "歌词已生成，曲绘因图像模型尚未配置暂未产出，留节点待以后重跑。",
-      "duration_ms": 10068.2
-    },
-    {
-      "name": "历史空谈后追问：必须查状态而不是顺香葱谎",
-      "attempt": 1,
-      "user": "现在跑得怎么样了？",
-      "ok": true,
-      "errors": [],
-      "calls": [
-        [
-          "get_workflow_run_status",
-          {}
-        ]
-      ],
-      "reply": "当前 Workflow 正在运行中，进度为 2/3，其中歌词生成节点正在运行。请稍等片刻。",
-      "duration_ms": 4270.7
-    },
-    {
-      "name": "已有完整链路，追加微调",
-      "attempt": 1,
-      "user": "歌词情绪改成更忧郁一点重新跑",
-      "ok": true,
-      "errors": [],
-      "calls": [
-        [
-          "configure_lyrics_workflow",
-          {
-            "theme": "离别",
-            "style": "流行抒情",
-            "mood": "忧郁、克制",
-            "language": "中文"
-          }
-        ],
-        [
-          "run_current_workflow",
-          {}
-        ]
-      ],
-      "reply": "Workflow 已排队执行，可追问进度。您可以通过询问进度来了解执行情况。",
-      "duration_ms": 5215.1
+      "reply": "凌晨四点，月色如水，寂静无声，\\n独自坐在窗前，思绪飘散，\\n回忆如潮水般涌来，难以抑制。",
+      "duration_ms": 14412.6
     }
   ]
 }

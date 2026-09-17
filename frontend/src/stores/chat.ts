@@ -21,6 +21,7 @@ export interface AgentMessage {
   isPending?: boolean
   attachments?: UploadedAttachment[]
   citations?: AgentCitation[]
+  interrupted?: boolean
 }
 
 export function formatToolName(toolName: string) {

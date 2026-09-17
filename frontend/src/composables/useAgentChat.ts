@@ -89,6 +89,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
       content: item.content,
       attachments: item.attachments?.map(hydrateAttachmentFromPayload),
       citations: item.citations,
+      interrupted: item.interrupted,
     }
   }
 
