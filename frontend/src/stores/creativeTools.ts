@@ -1,3 +1,4 @@
+import { readScoped, writeScoped } from '@/utils/storageScope'
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
@@ -117,7 +118,7 @@ export const useCreativeToolsStore = defineStore('creativeTools', () => {
   const hasTools = computed(() => instances.value.length > 0)
 
   function persist() {
-    localStorage.setItem(
+    writeScoped(
       currentStorageKey,
       JSON.stringify({ instances: instances.value, selectedId: selectedId.value }),
     )
@@ -126,7 +127,7 @@ export const useCreativeToolsStore = defineStore('creativeTools', () => {
   function loadForProject(projectId: number | null) {
     currentStorageKey = projectId == null ? STORAGE_KEY : `${STORAGE_KEY}:${projectId}`
     try {
-      const raw = localStorage.getItem(currentStorageKey)
+      const raw = readScoped(currentStorageKey)
       if (!raw) {
         instances.value = []
         selectedId.value = null

@@ -16,6 +16,7 @@ import time
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from core.exceptions import AppError
@@ -689,6 +690,7 @@ def get_run_status_detail(
     return {
         "run_id": run["id"],
         "status": run["status"],
+        "env_snapshot": run.get("env_snapshot"),
         "error": run.get("error"),
         "created_at": run.get("created_at"),
         "started_at": run.get("started_at"),
@@ -724,6 +726,26 @@ async def await_workflow_idle(
 
 
 # ---------- 异步任务队列接入（submit → 后台 Worker 执行） ----------
+
+
+def _build_env_snapshot() -> dict[str, Any]:
+    """“当时环境”快照：模型、prompt hash、能力清单，随 run 落库。
+
+    修复语义漂移需要“当时环境”可复现：模型名 + prompt SHA-256 + 段落文件名 + 能力清单。
+    """
+    import hashlib
+
+    from agents.prompt_loader import _sections  # 装配出段节原文
+    from core import config as cfg
+
+    return {
+        "chat_model": cfg.CHAT_MODEL,
+        "lyrics_model": cfg.LYRICS_MODEL,
+        "embedding_model": cfg.EMBEDDING_MODEL,
+        "capabilities": sorted(CAPABILITY_REGISTRY.keys()),
+        "prompt_sha256": hashlib.sha256("\n\n".join(_sections()).encode()).hexdigest()[:16],
+        "prompt_sections": [f.name for f in sorted(Path(cfg.BACKEND_DIR / "prompts").glob("*.md"))],
+    }
 
 
 def submit_workflow_run(user_id: int, project_id: int | None) -> dict[str, Any]:
@@ -772,6 +794,7 @@ def submit_workflow_run(user_id: int, project_id: int | None) -> dict[str, Any]:
         workflow_id=saved["id"],
         job_id=job["id"],
         created_at=_now(),
+        env_snapshot=_build_env_snapshot(),
     )
     return {
         "run_id": run_id,

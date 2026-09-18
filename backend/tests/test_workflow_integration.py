@@ -11,6 +11,7 @@ import pytest
 
 import core.database as database
 from core.migrations import run_migrations
+from repositories import workflow_run_repo
 from services import workflow_service
 from services.workflow_service import finalize_failed_run, submit_workflow_run
 
@@ -121,6 +122,20 @@ def test_configure_rejects_upstream_ref_without_wiring(real_db):
         )
     assert exc.value.status_code == 422
     assert "串联" in exc.value.detail or "上游" in exc.value.detail
+
+
+def test_run_records_env_snapshot(real_db):
+    """C15：一次run入库时必须带上当时环境（模型/prompt hash/能力清单）快照。"""
+    user = 906
+    _create_user(user)
+    _configure_lyrics(user)
+    submission = submit_workflow_run(user, None)
+    run = workflow_run_repo.get(user, submission["run_id"])
+    env = run["env_snapshot"]
+    assert env["chat_model"]
+    assert env["capabilities"] == ["image.generate", "lyrics.generate"]
+    assert len(env["prompt_sha256"]) == 16
+    assert "30_workflow_rules.md" in env["prompt_sections"]
 
 
 def test_configure_allowed_during_run_via_cas(real_db):

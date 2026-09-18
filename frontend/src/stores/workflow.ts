@@ -4,6 +4,7 @@ import type { CreativeToolInstance, CreativeToolType } from './creativeTools'
 import { useCreativeToolsStore } from './creativeTools'
 import { useToolRunsStore, type ToolRunStatus } from './toolRuns'
 import { ElMessage } from '@/utils/toast'
+import { readScoped, writeScoped } from '@/utils/storageScope'
 import {
   getWorkflowDraft,
   saveWorkflowDraft,
@@ -149,7 +150,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   function persist() {
-    localStorage.setItem(
+    writeScoped(
       currentStorageKey,
       JSON.stringify({
         nodes: nodes.value,
@@ -444,7 +445,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     scale.value = 1
     offset.value = { x: 0, y: 0 }
     try {
-      const raw = localStorage.getItem(currentStorageKey)
+      const raw = readScoped(currentStorageKey)
       if (!raw) {
         nodes.value = []
         edges.value = []

@@ -9,6 +9,7 @@
  */
 import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
+import { readScoped, removeScoped, writeScoped } from '@/utils/storageScope'
 import { getRecentProjects, type ProjectPayload } from '@/serve/project'
 import { formatProjectTime } from '@/utils/datetime'
 import type { BrowserDirectoryHandle } from '@/utils/localProject'
@@ -93,11 +94,11 @@ export const useProjectStore = defineStore('project', () => {
 
   function persist() {
     if (!name.value || !projectPath.value) {
-      localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY)
+      removeScoped(ACTIVE_PROJECT_STORAGE_KEY)
       return
     }
 
-    localStorage.setItem(
+    writeScoped(
       ACTIVE_PROJECT_STORAGE_KEY,
       JSON.stringify({
         id: id.value,
@@ -110,7 +111,7 @@ export const useProjectStore = defineStore('project', () => {
 
   /** 兜底恢复：仅用于路由里没有可用项目 id 的场景（如本地未登记项目） */
   function restoreFromStorage(): boolean {
-    const raw = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY)
+    const raw = readScoped(ACTIVE_PROJECT_STORAGE_KEY)
     if (!raw) return false
 
     try {
@@ -131,7 +132,7 @@ export const useProjectStore = defineStore('project', () => {
       })
       return true
     } catch {
-      localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY)
+      removeScoped(ACTIVE_PROJECT_STORAGE_KEY)
       return false
     }
   }

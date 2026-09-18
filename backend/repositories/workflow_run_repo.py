@@ -10,7 +10,7 @@ from core.database import db_connection
 
 _RUN_COLUMNS = (
     "id, user_id, project_id, workflow_id, draft_revision, draft_snapshot_json, "
-    "status, error, job_id, created_at, started_at, finished_at"
+    "status, error, job_id, created_at, started_at, finished_at, env_snapshot_json"
 )
 _STEP_COLUMNS = (
     "id, run_id, node_id, capability_id, status, input_json, output_json, error, created_at"
@@ -20,6 +20,8 @@ _STEP_COLUMNS = (
 def _run(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
     item["draft_snapshot"] = json.loads(item.pop("draft_snapshot_json"))
+    env_raw = item.pop("env_snapshot_json", None)
+    item["env_snapshot"] = json.loads(env_raw) if env_raw else None
     return item
 
 
@@ -44,11 +46,12 @@ def create(
     workflow_id: int | None,
     job_id: str | None,
     created_at: str,
+    env_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     with db_connection() as conn:
         conn.row_factory = sqlite3.Row
         conn.execute(
-            f"INSERT INTO workflow_runs ({_RUN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, 'queued', NULL, ?, ?, NULL, NULL)",
+            f"INSERT INTO workflow_runs ({_RUN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, 'queued', NULL, ?, ?, NULL, NULL, ?)",
             (
                 run_id,
                 user_id,
@@ -58,6 +61,7 @@ def create(
                 json.dumps(draft_snapshot, ensure_ascii=False),
                 job_id,
                 created_at,
+                json.dumps(env_snapshot, ensure_ascii=False) if env_snapshot else None,
             ),
         )
         row = conn.execute(

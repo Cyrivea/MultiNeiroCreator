@@ -310,6 +310,15 @@ def _m009_create_usage_events(conn: sqlite3.Connection) -> None:
     )
 
 
+def _m011_add_run_env_snapshot(conn: sqlite3.Connection) -> None:
+    """运行时的“当时环境”快照：prompt/模型/能力清单随 run 落库。
+
+    没有它，发版改了 prompt 或换了模型后，恢复/复查历史运行不能重现当时行为。"""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(workflow_runs)")]
+    if "env_snapshot_json" not in cols:
+        conn.execute("ALTER TABLE workflow_runs ADD COLUMN env_snapshot_json TEXT")
+
+
 def _m010_add_message_interrupted(conn: sqlite3.Connection) -> None:
     """SSE 断连截断标记：消息可能只生成了一半（客户端断开/上游中断），
     落库时必须带标，否则用户重进看到的是一条莫名的话。"""
@@ -329,6 +338,7 @@ MIGRATIONS: list[Migration] = [
     ("create workflow run/step ledger", _m008_create_workflow_runs),
     ("create usage ledger", _m009_create_usage_events),
     ("add message interrupted flag", _m010_add_message_interrupted),
+    ("add run env snapshot", _m011_add_run_env_snapshot),
 ]
 
 
