@@ -356,8 +356,8 @@ def test_hollow_claim_detector():
     # 空谈：创作请求 + 排比谓词 + 零工具
     assert _claims_action_without_tools("写首歌", "Workflow 已排队执行，画布会显示运行状态", [])
     assert _claims_action_without_tools("生成一张图", "已配置图像节点", [])
-    # 已经真调过工具的不用纠
-    assert not _claims_action_without_tools("写首歌", "已排队执行", ["configure_lyrics_workflow"])
+    # 配了节点但没跑却声称已排队——空谈变体，要纠
+    assert _claims_action_without_tools("写首歌", "已排队执行", ["configure_lyrics_workflow"])
     # 纯解释/科普不算空谈
     assert not _claims_action_without_tools("画布是什么", "画布是编辑工作流的地方", [])
     # 空回复走另一条兜底路，不该被这里拦
@@ -383,3 +383,23 @@ def test_chat_repo_interrupted_roundtrip(tmp_path, monkeypatch):
     history = chat_repo.list_history(800, None)
     assert history[0]["interrupted"] is True
     assert "interrupted" not in history[1]
+
+
+def test_hollow_claim_detector_partial_tools():
+    """空谈变体：配了节点没跑，却说“已排队”——必须被纠错。"""
+    from services.chat.chat_orchestrator import _claims_action_without_tools
+
+    assert _claims_action_without_tools(
+        "写歌词并出曲绘", "Workflow 已排队执行", ["configure_lyrics_workflow"]
+    )
+    assert _claims_action_without_tools(
+        "写歌词并出曲绘", "图像已生成在画布上", ["configure_lyrics_workflow", "configure_image_workflow"]
+    )
+    # 实实在在跑过不算空谈
+    assert not _claims_action_without_tools(
+        "写歌词并出曲绘", "已排队执行", ["configure_lyrics_workflow", "run_current_workflow"]
+    )
+    # 纯配置请求缺“跑”不算空谈（用户就没让跑）
+    assert not _claims_action_without_tools(
+        "先别跑，把歌词主题改成海边", "已修改参数", ["configure_lyrics_workflow"]
+    )

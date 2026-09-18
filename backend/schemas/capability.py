@@ -32,11 +32,11 @@ class ImageGenerateInput(BaseModel):
 
 
 class CapabilityRunRequest(BaseModel):
-    """当前只开放歌词能力，后续按 capability_id 扩展而不是开放任意 Provider。"""
+    """独立运行入口：按 capability_id 白名单扩展，输入类型随场景。"""
 
-    capability_id: Literal["lyrics.generate"]
+    capability_id: Literal["lyrics.generate", "image.generate"]
     project_id: int | None = None
-    inputs: LyricsGenerateInput
+    inputs: LyricsGenerateInput | ImageGenerateInput
 
 
 class CapabilityResult(BaseModel):

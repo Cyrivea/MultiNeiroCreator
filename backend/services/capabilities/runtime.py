@@ -107,9 +107,13 @@ def _lyrics_executor(inputs: BaseModel) -> dict:
     return generate_lyrics_text(inputs)
 
 
-def _image_executor(_inputs: BaseModel) -> str:
-    """图像能力暂未接 Provider；返回模型未配置态而不是伪造一张图。"""
-    raise ModelNotConfiguredError("图像模型尚未配置")
+def _image_executor(inputs: BaseModel) -> dict:
+    """真实图像 Provider（SiliconFlow Kolors）。没配 KEY 仍会走 ModelNotConfiguredError 支路。"""
+    from schemas.capability import ImageGenerateInput
+    from services.capabilities.siliconflow_image import generate_image
+
+    assert isinstance(inputs, ImageGenerateInput)
+    return generate_image(inputs)
 
 
 def _register() -> dict[str, CapabilityEntry]:

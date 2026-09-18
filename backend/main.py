@@ -10,6 +10,7 @@ from core.logging_config import setup_logging
 from core.migrations import run_migrations
 from core.ratelimit import redis_client
 from core.request_context import RequestContextMiddleware
+from routers.assets import router as assets_router
 from routers.assistant import router as assistant_router
 from routers.auth import router as auth_router
 from routers.capabilities import router as capabilities_router
@@ -43,6 +44,7 @@ register_exception_handlers(app)
 
 
 app.include_router(auth_router)
+app.include_router(assets_router)
 app.include_router(assistant_router)
 app.include_router(capabilities_router)
 app.include_router(projects_router)

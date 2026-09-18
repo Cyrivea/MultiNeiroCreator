@@ -318,7 +318,9 @@ def test_configure_image_creates_node(memory_repo):
     assert (image_node_id, OUTPUT_ID) in edges
 
 
-def test_image_run_reports_model_not_configured(memory_repo):
+def test_image_run_reports_model_not_configured(memory_repo, monkeypatch):
+    # 不受开凾发 .env 的真 SILICONFLOW_API_KEY 干扰：强制未配置全景
+    monkeypatch.setattr("core.config.SILICONFLOW_API_KEY", "")
     workflow_service.configure_image(1, None, {"prompt": "雨夜小店"})
     result = run(run_workflow(1, None))
 

@@ -52,11 +52,21 @@ _CREATIVE_VERBS = ("写", "生成", "做", "画", "创作", "出图", "出一张
 
 
 def _claims_action_without_tools(message: str, reply: str, tools_used: list[str]) -> bool:
-    """模型声称动手了但一轮工具都没调：必须是创作类请求 + 回答里有动作谓词才算。"""
-    if tools_used or not reply.strip():
+    """模型声称动手了但轮不到工具：两种毛都抓。
+
+    1. 完全零工具 + 创作类请求 + 回答里有动作谓词；
+    2. 配了节点但没跑（声称"已排队"却没调 run_current_workflow）：
+       实测过的变体——配好了说人话，就是不点成了运行。
+    """
+    if not reply.strip():
         return False
     if not any(verb in message for verb in _CREATIVE_VERBS):
         return False
+    if not tools_used:
+        return any(hint in reply for hint in _ACTION_CLAIM_HINTS)
+    if "run_current_workflow" in tools_used:
+        return False
+    # 配了但没跑：只要出现执行语谓词就算空谈
     return any(hint in reply for hint in _ACTION_CLAIM_HINTS)
 WEB_SEARCH_TOOL_NAME = "search_web"
 TEXT_TOOL_CALL_MAX_LENGTH = 1200
@@ -269,6 +279,7 @@ async def _orchestrate(
     tool_outcomes: list[dict] = []
     tool_rounds = 0
     hollow_claim_corrected = False
+    force_tool_choice_once = False
     llm_started = time.perf_counter()
     first_token_at: float | None = None
     stream: Any = None  # 上游 SSE 流对象（智谱 SDK Stream），中断时要 close 停止计费
@@ -284,6 +295,11 @@ async def _orchestrate(
             request_kwargs: dict = {"model": CHAT_MODEL, "messages": messages, "stream": True}
             if allow_tools:
                 request_kwargs["tools"] = available_tools
+                if force_tool_choice_once:
+                    # 空谈纠错轮：本轮必须至少调用一个工具（实测 GLM-flash 在污染
+                    # 历史下不给强制会再次空谈）
+                    request_kwargs["tool_choice"] = "required"
+                    force_tool_choice_once = False
             stream = await asyncio.to_thread(client.chat.completions.create, **request_kwargs)
 
             pending_tool_calls: dict[int, dict] = {}
@@ -336,6 +352,7 @@ async def _orchestrate(
                 # 给一次纠错机会（只补一轮），逼它要么真调用要么如实说做不到。
                 if not hollow_claim_corrected and _claims_action_without_tools(message, reply, tools_used):
                     hollow_claim_corrected = True
+                    force_tool_choice_once = True
                     logger.warning(
                         "检测到空谈式回复，自动触发纠错轮",
                         extra={"evt": "hollow_claim", "reply_preview": reply[:120]},

@@ -370,6 +370,22 @@
             <pre class="result-content">{{ toolRun.content }}</pre>
           </section>
           <section
+            v-else-if="runnableTool && toolRun?.status === 'succeeded' && tool.type === 'image'"
+            class="block result-block"
+          >
+            <header class="result-head">
+              <span>图像生成结果</span>
+              <span class="result-meta">最新一次运行</span>
+            </header>
+            <img
+              v-if="imageResultUrl"
+              class="result-image"
+              :src="imageResultUrl"
+              alt="生成图"
+            />
+            <pre v-else class="result-content">{{ toolRun.content }}</pre>
+          </section>
+          <section
             v-else-if="runnableTool && toolRun && toolRun.status !== 'running'"
             class="block error-block"
           >
@@ -466,6 +482,14 @@ function candidateStatusLabel(status: string) {
 function preview(content: string) {
   return content.length > 280 ? `${content.slice(0, 280)}…` : content
 }
+
+// 图像结果以 markdown 图片行回传（![alt](/api/assets/xxx.png)），应直接显示为图片
+const imageResultUrl = computed(() => {
+  const content = toolRun.value?.content
+  if (!content) return null
+  const match = content.match(/!\[[^\]]*\]\(([^)]+)\)/)
+  return match?.[1] ?? null
+})
 
 function selectCandidate(candidateId: string) {
   if (!currentNode.value) return
@@ -1036,6 +1060,13 @@ function artMark(type: string) {
   color: #74747b;
   font-size: 11px;
   line-height: 1.5;
+}
+
+.result-image {
+  display: block;
+  max-width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .result-block {

@@ -40,6 +40,8 @@ API_KEY = os.getenv("API_KEY", "").strip()
 # 聊天主模型与歌词生产模型统一走环境变量；换 Provider 时只改配置不动代码。
 CHAT_MODEL = os.getenv("CHAT_MODEL", "glm-4-flash").strip()
 LYRICS_MODEL = os.getenv("LYRICS_MODEL", "glm-4-flash").strip()
+# 图像走 SiliconFlow Kolors（中文友好；该账号 FLUX 被禁用）
+IMAGE_MODEL = os.getenv("IMAGE_MODEL", "Kwai-Kolors/Kolors").strip()
 SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "").strip()
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3").strip()
 EMBEDDING_API_URL = os.getenv("EMBEDDING_API_URL", "https://api.siliconflow.cn/v1/embeddings").strip()
