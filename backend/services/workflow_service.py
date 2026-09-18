@@ -29,6 +29,11 @@ from services.project_service import get_project
 INPUT_ID = "workflow-input"
 OUTPUT_ID = "workflow-output"
 
+# 节点网格：与前端 positionForIndex 同一套坐标（起点 300、列宽 300、最多 3 列后换行）。
+# 之前的“x = 320 + 300 * n”不取模，节点一多就淤出画布可视区，实测被压到右侧聊天面板后。
+def position_x_for_index(tool_index: int) -> int:
+    return 300 + (tool_index % 3) * 300
+
 # “画布已读”印记：同一请求轮内，读过画布的用户/项目才被允许 configure/clear。
 # 用 contextvars 保证并发请求互不影响；每轮聊天由编排器重置。
 _canvas_read_stamp: contextvars.ContextVar[tuple[int, int | None] | None] = (
@@ -102,7 +107,7 @@ def empty_draft() -> dict[str, Any]:
                 "endpoint": "output",
                 "name": "输出",
                 "description": "展示、保存和导出最终结果",
-                "x": 900,
+                "x": 1230,
                 "y": 280,
             },
         ],
@@ -337,7 +342,7 @@ def configure_capability(
                 "type": tool_type,
                 "capability_id": capability_id,
                 **meta,
-                "x": 320 + 300 * len(draft.get("nodes", [])),
+                "x": position_x_for_index(len([n for n in draft.get("nodes", []) if n.get("kind") != "endpoint"])),
                 "y": 280,
             }
             # capability meta 字段已包含 name/badge/description/color，去掉 type 重复

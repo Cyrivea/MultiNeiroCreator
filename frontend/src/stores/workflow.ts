@@ -89,9 +89,10 @@ function cloneSnapshot(snapshot: WorkflowSnapshot): WorkflowSnapshot {
 }
 
 function positionForIndex(index: number) {
+  // 三列网格，与后端 position_x_for_index 同步；y 240 接 input 的输出插孔高度
   return {
     x: 300 + (index % 3) * 300,
-    y: 150 + Math.floor(index / 3) * 178,
+    y: 280 + Math.floor(index / 3) * 200,
   }
 }
 
@@ -196,8 +197,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
       selectedCandidateId: node.selectedCandidateId ?? null,
     }))
     const inputPosition = endpointPositions.value.input ?? { x: 36, y: 280 }
-    const maxX = Math.max(1120, ...nodes.value.map((node) => node.x + 236))
-    const outputPosition = endpointPositions.value.output ?? { x: maxX + 170, y: 280 }
+    // 输出端点贴最右节点 + 隙缝；之前 Math.max(1120, ...) 的地板值会把输出推到画布可视区外
+    const maxX = Math.max(320, ...nodes.value.map((node) => node.x + 236))
+    const outputPosition = endpointPositions.value.output ?? { x: maxX + 86, y: 280 }
     return {
       nodes: [
         {
@@ -242,6 +244,28 @@ export const useWorkflowStore = defineStore('workflow', () => {
       }
       node.params = creativeToolsStore.instances.find((item) => item.id === node.toolId)?.params
     }
+  }
+
+  /** degenerate 布局自检：两个工具节点中心距小于 100px（节点宽 236）视为叠扁，拉回三列网格。
+   *  只在持久化/快照时触发；不影响用户拖拽中的合法位置。 */
+  function fixupDegenerateLayout() {
+    const tools = [...nodes.value].filter(
+      (n) => n.id !== WORKFLOW_INPUT_ID && n.id !== WORKFLOW_OUTPUT_ID,
+    )
+    if (tools.length <= 1) return false
+    const cx = (n: { x: number }) => n.x + 118
+    for (let i = 0; i < tools.length; i++) {
+      for (let j = i + 1; j < tools.length; j++) {
+        if (Math.abs(cx(tools[i]!) - cx(tools[j]!)) < 100) {
+          for (const [idx, n] of tools.entries()) {
+            n.x = 300 + (idx % 3) * 300
+            n.y = 280 + Math.floor(idx / 3) * 200
+          }
+          return true
+        }
+      }
+    }
+    return false
   }
 
   /** 应用后端 Draft（AI 改图、改参、运行状态都从这里进入画布）。 */
@@ -318,7 +342,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
       selectedNodeId.value = null
       selectedNodeIds.value = []
       // 只写本地缓存，不再回写服务器——这条数据本就来自服务器
-      localStorage.setItem(
+      fixupDegenerateLayout() // 应用快照时先拉住重叠，别污染视图
+      writeScoped(
         currentStorageKey,
         JSON.stringify({
           nodes: nodes.value,

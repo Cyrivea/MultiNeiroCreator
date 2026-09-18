@@ -291,7 +291,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useCreativeToolsStore, type CreativeToolType } from '@/stores/creativeTools'
 import {
   useWorkflowStore,
@@ -340,6 +340,55 @@ interface MinimapProjection {
 }
 
 const workflowStore = useWorkflowStore()
+
+/* 首次加载后自动 fit：把画布世界居中缩放到当前容器。解决“节点全在画布外”的失衡感（图中 canvasRef 上方已有） */
+const fitView = () => {
+  const el = canvasRef.value
+  const nodes = workflowStore.nodes
+  if (!el || !nodes.length) return
+  // 用 store 里逻辑坐标（而不是 getBoundingClientRect 的变换后坐标）计算内容包络
+  const xs = [...nodes.map((n) => n.x), workflowStore.endpointPositions.input?.x ?? 36]
+  const ys = [...nodes.map((n) => n.y), workflowStore.endpointPositions.input?.y ?? 280]
+  // 含 output 端点
+  const out = workflowStore.endpointPositions.output
+  if (out) {
+    xs.push(out.x)
+    ys.push(out.y)
+  }
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs) + 236 // 节点宽约 236
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys) + 116 // 节点高约 116
+  const view = el.getBoundingClientRect()
+  const targetScale = Math.min(
+    1.4,
+    (view.width - 80) / Math.max(1, maxX - minX),
+    (view.height - 80) / Math.max(1, maxY - minY),
+  )
+  const cx = (minX + maxX) / 2
+  const cy = (minY + maxY) / 2
+  workflowStore.setView(targetScale, {
+    x: view.width / 2 - cx * targetScale,
+    y: view.height / 2 - cy * targetScale,
+  })
+}
+let hasFittedInitially = false
+onMounted(() => {
+  // 换项目后第一次出内容时 fit；用户后续手动拖拽编码不再被抢
+  if (!hasFittedInitially && workflowStore.nodes.length > 0) {
+    hasFittedInitially = true
+    setTimeout(fitView, 50)
+  }
+})
+watch(
+  () => workflowStore.nodes.length,
+  (next, prev) => {
+    if (!hasFittedInitially && prev === 0 && next > 0) {
+      hasFittedInitially = true
+      setTimeout(fitView, 50)
+    }
+  },
+)
 const creativeToolsStore = useCreativeToolsStore()
 const canvasRef = ref<HTMLElement | null>(null)
 const moreMenuOpen = ref(false)
