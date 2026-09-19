@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "note": "infra=框架轻接口并发链; chat=真实 LLM 顺序链（上游智谱）"
+  },
+  "infra": [
+    {
+      "concurrency": 5,
+      "total": 100,
+      "errors": 0,
+      "ok_rate": 1.0,
+      "p50_ms": 14.0,
+      "p95_ms": 178.5,
+      "p99_ms": 1350.3,
+      "throughput_rps_proxy": 74.0
+    },
+    {
+      "concurrency": 20,
+      "total": 100,
+      "errors": 0,
+      "ok_rate": 1.0,
+      "p50_ms": 50.9,
+      "p95_ms": 73.2,
+      "p99_ms": 76.7,
+      "throughput_rps_proxy": 1254.6
+    },
+    {
+      "concurrency": 50,
+      "total": 100,
+      "errors": 0,
+      "ok_rate": 1.0,
+      "p50_ms": 118.5,
+      "p95_ms": 158.4,
+      "p99_ms": 170.1,
+      "throughput_rps_proxy": 576.5
+    }
+  ],
+  "chat": {
+    "rounds": 5,
+    "errors": 0,
+    "total_p50_ms": 4274.4,
+    "total_p95_ms": 8102.9,
+    "ttft_p50_ms": 4274.4,
+    "ttft_p95_ms": 8102.9
+  }
+}
