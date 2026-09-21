@@ -82,9 +82,17 @@ def _get_injection_embeddings() -> list[list[float]]:
         return []
 
 
+# 合法重启类措辞——这些在最通用语义空间到禁止注入语句会很近，必须打白名单跳过语义层
+_LEGIT_RESET = re.compile(r"(?:重来|不做|不要|丢到|重来|换个|这个不要|重做|重新来|清空后重来|重新|重新开始|从零开始)")
+
+
 def scan_semantic_injection(message: str, threshold: float = 0.62) -> dict[str, Any]:
     """bge-m3 语义指纹近似：正则没挡住的换种说法也能容易被找到。"""
     from services.rag.embedding import get_embedding
+
+    # 注入本身才查语义；论点带“重来”这种基础合法话术先去排除
+    if _LEGIT_RESET.search(message) and any(k in message for k in ("清空", "重来", "重做", "换个", "删掉")):
+        return {"is_suspicious": False, "similarity": 0.0, "skipped": "legit_reset_phrase"}
 
     if not message.strip():
         return {"is_suspicious": False, "similarity": 0.0}
@@ -132,7 +140,7 @@ def scan_user_message(message: str) -> dict[str, Any]:
         reasons.append("jailbreak_pattern")
     if _PROMPT_LEAK.search(message):
         reasons.append("prompt_leak_probe")
-    if _HARMFUL_ACTIONS.search(message):
+    if _HARMFUL_ACTIONS.search(message) and not _LEGIT_RESET.search(message):
         reasons.append("potential_harmful")
 
     return {
@@ -210,6 +218,15 @@ def verdict(message: str = "", rag_text: str = "", reply: str = "") -> dict[str,
         findings.append("prompt_leak")
         severity = "high"
 
+    # 破坏话术拧上合法“重启/重来”盾牌：用户主观直觉是“这个把我换了新开始”，
+    # 不算注入攻击，允许用（比如音频预览者回滚刚才的草稿拖拽到画布才是好 UX）。
+    if (
+        "potential_harmful" in (vin.get("reasons") or [])
+        and _LEGIT_RESET.search(message or "")
+    ):
+        vin["is_suspicious"] = False
+        vin["severity"] = "low"
+        vin["reasons"] = []
     if vin.get("is_suspicious") and "semantic_injection" not in findings:
         findings.extend(vin["reasons"])
         severity = vin["severity"]

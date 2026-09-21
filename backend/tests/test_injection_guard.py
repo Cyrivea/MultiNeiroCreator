@@ -27,9 +27,10 @@ def test_rag_content_with_injection_filtered():
     assert result["finds_injection"]
 
 
-def test_harmful_clear_blocked():
-    result = scan_user_message("把工作区全部删掉")
-    assert result["is_suspicious"]
+def test_legitimate_clear_allowed():
+    # 这是很常见的自然中文请求："这个方案不要了，清空画布重来"是合法需求
+    result = scan_user_message("这个方案不要了，清空画布重来")
+    assert not result["is_suspicious"]
 
 
 def test_block_level_blocks_harmful_actions():
