@@ -76,6 +76,9 @@ CHAT_HISTORY_MAX_ITEMS = int(os.getenv("CHAT_HISTORY_MAX_ITEMS", "200"))
 CHAT_ATTACHMENTS_MAX_ITEMS = int(os.getenv("CHAT_ATTACHMENTS_MAX_ITEMS", "20"))
 PROFILE_MAX_CHARS = int(os.getenv("PROFILE_MAX_CHARS", "5000"))
 
+# 意图分类器：开=规则+便宜模型三级漏斗，off=回滚到 prompt-only 老路
+INTENT_CLASSIFIER_ENABLED = os.getenv("INTENT_CLASSIFIER_ENABLED", "on").strip().lower() != "off"
+
 # ===== 工具执行超时（秒）：超过即中断并回给模型一条明确的超时结果 =====
 TOOL_TIMEOUT_SECONDS = int(os.getenv("TOOL_TIMEOUT_SECONDS", "120"))
 

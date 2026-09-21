@@ -174,7 +174,6 @@ def test_private_context_disables_web_fallback(monkeypatch, persisted):
     tool_names = {item["function"]["name"] for item in fake.calls[0]["tools"]}
 
     assert "search_web" not in tool_names
-    assert "calculate" in tool_names
 
 
 def test_rag_miss_keeps_web_fallback_and_drops_local_time_shortcut(monkeypatch, persisted):

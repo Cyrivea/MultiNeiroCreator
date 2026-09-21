@@ -28,6 +28,7 @@ from core import config
 from repositories.chat_repo import append_message
 from services.capabilities import CapabilityContext, use_capability_context
 from services.chat.context_builder import build_chat_context
+from services.chat.intent_classifier import classify as classify_intent
 from services.chat.tool_executor import execute_tool
 from services.workflow_service import reset_canvas_read_stamp
 
@@ -271,7 +272,29 @@ async def _orchestrate(
     ctx = await build_chat_context(user["id"], message, project_id, attachments)
     messages = ctx.messages
 
+    # C16: 三级意图漏斗——规则秒判 → 便宜模型结构化分类 → 兜底
+    intent_result = await classify_intent(
+        message,
+        has_knowledge_context=ctx.has_knowledge_context,
+        enable_classifier=config.INTENT_CLASSIFIER_ENABLED,
+    )
+    intent_type = intent_result.get("intent", "unknown")
+    allowed_by_intent = intent_result.get("allow_tools", set())
     available_tools = _tools_for_context(ctx.has_knowledge_context)
+    if allowed_by_intent:
+        # 意图白名单：收窄为和场景相关的子集
+        available_tools = [
+            t for t in available_tools if t.get("function", {}).get("name") in allowed_by_intent
+        ]
+        logger.info(
+            "意图收窄工具面",
+            extra={"evt": "intent_narrowed", "intent": intent_type, "allowed": sorted(allowed_by_intent)},
+        )
+    elif intent_type == "chat":
+        # 闲聊：断开工生产能力（骗局不重复言说）
+        available_tools = [
+            t for t in available_tools if t.get("function", {}).get("name") == "search_web"
+        ]
 
     reply = ""
     tools_used: list[str] = []
