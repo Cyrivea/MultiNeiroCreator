@@ -308,6 +308,27 @@ async def _orchestrate(
     stream: Any = None  # 上游 SSE 流对象（智谱 SDK Stream），中断时要 close 停止计费
 
     try:  # 中断收尸：客户端断开/任务取消时，半截回复要落库+打标，上游流要关（C14）
+        # 防注入屏障（请求开始路）：挡住了就看似正常性地拒绝，不走 LLM 调用
+        from core.injection_guard import verdict as injection_verdict
+
+        guard = injection_verdict(message=message)
+        if guard.get("action") == "block":
+            logger.warning(
+                "疑似注入式攻击已拦截",
+                extra={
+                    "evt": "injection_blocked",
+                    "reasons": guard.get("reasons"),
+                    "severity": guard.get("severity"),
+                },
+            )
+            blocked_message = (
+                "我注意到这条消息包含了不合适的指令模式。"
+                "请你说明白你到底想要什么，我可以帮你正常做。"
+            )
+            yield _sse({"type": "content", "content": blocked_message})
+            yield _sse({"type": "done", "history": ctx.clean_history, "tool_used": None, "citations": []})
+            return
+
         # ReAct 主循环：前 MAX_TOOL_ROUNDS 轮允许工具；最后一轮强制"只许说话"收尾
         for round_no in range(MAX_TOOL_ROUNDS + 1):
             allow_tools = round_no < MAX_TOOL_ROUNDS
