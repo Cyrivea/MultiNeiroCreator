@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import contextvars
 import copy
+import logging
 import re
 import time
 import uuid
@@ -25,6 +26,8 @@ from schemas.capability import CapabilityResult
 from services import job_service
 from services.capabilities import CAPABILITY_REGISTRY, CapabilityContext, run_capability
 from services.project_service import get_project
+
+logger = logging.getLogger("workflow")
 
 INPUT_ID = "workflow-input"
 OUTPUT_ID = "workflow-output"

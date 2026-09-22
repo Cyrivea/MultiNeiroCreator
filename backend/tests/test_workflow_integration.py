@@ -7,7 +7,6 @@
 """
 
 
-import asyncio
 
 import pytest
 
@@ -15,7 +14,7 @@ import core.database as database
 from core.migrations import run_migrations
 from repositories import workflow_run_repo
 from services import workflow_service
-from services.workflow_service import finalize_failed_run, submit_workflow_run
+from services.workflow_service import submit_workflow_run
 
 
 @pytest.fixture(autouse=True)
@@ -111,7 +110,7 @@ def test_crash_finalization_releases_lock(real_db):
     submission = submit_workflow_run(user, None)
 
     # 人为卡住：把 running_draft 落到库，再崩溃
-    asyncio.run(finalize_failed_run(user, None, submission["run_id"], "RuntimeError: boom"))
+    workflow_service.finalize_failed_run(user, None, submission["run_id"], "RuntimeError: boom")
 
     detail = workflow_service.get_run_status_detail(user, None, submission["run_id"])
     assert detail["status"] == "failed"

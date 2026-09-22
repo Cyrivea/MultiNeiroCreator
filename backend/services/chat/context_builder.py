@@ -66,6 +66,32 @@ def _citation_from_hit(hit: dict, source_fallback: str) -> dict:
     }
 
 
+def _latest_workflow_note(user_id: int, project_id: int | None) -> str:
+    """返回最近一次的 Workflow 终态简述—— assistant 应该直接答这轮结果而不是假装它没跑过。"""
+    try:
+        from repositories import workflow_run_repo
+
+        recent = workflow_run_repo.list_recent(user_id, project_id, limit=1)
+        if not recent:
+            return ""
+        run = recent[0]
+        if run.get("status") not in {"succeeded", "failed"}:
+            return ""
+        nodes = [
+            str(n.get("name") or "未命名")
+            for n in run.get("draft_snapshot", {}).get("nodes", [])
+            if n.get("capability_id")
+        ]
+        status_word = "完成" if run["status"] == "succeeded" else "失败"
+        error_part = f"：{run['error']}" if run.get("error") else ""
+        return (
+            f"\n\n[Workflow 最近运行状态]：上一次 workflow {status_word}（{run['id']}，"
+            f"节点: {', '.join(nodes) or '无'}）。{error_part}"
+        )
+    except Exception:
+        return ""
+
+
 def build_attachment_context(
     user_id: int,
     project_id: int | None = None,
@@ -236,6 +262,11 @@ async def build_chat_context(
         asyncio.to_thread(get_profile, user_id),
         asyncio.to_thread(list_history, user_id, project_id),
     )
+    # 给模型一句“上一轮 workflow 的结论”：问题 2——助手上下文里永远有'跑完了'的信号，
+    # 不惠它先揭晓'什么运行结果'再问状态
+    latest = _latest_workflow_note(user_id, project_id)
+    if latest:
+        context = (context or "") + latest
     system_prompt = build_system_prompt(profile, context)
     history = full_history[-config.CHAT_HISTORY_MAX_ITEMS :]
     messages, clean_history = assemble_messages(system_prompt, history, message, attachments)
