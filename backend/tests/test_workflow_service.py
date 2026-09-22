@@ -277,6 +277,16 @@ def test_get_run_status_detail_404_when_no_runs(memory_repo, monkeypatch):
 
 
 def test_finalize_failed_run_resets_stuck_nodes(memory_repo):
+    # system-notice 落账走真 SQLite，先把 user=1 建出来（FK 约束）
+    with pytest.MonkeyPatch.context() as _ctx:
+        pass  # 只依赖 memory_repo stub 挡不住通知筹法外键
+    from core import database
+
+    with database.db_connection() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO users (id, username, password_hash, profile, created_at) "
+            "VALUES (1, 'wf-test@local', 'x', '', '2026-01-01')"
+        )
     configure_lyrics(1, None, {"theme": "夏夜"})
     store = memory_repo
     draft = store[(1, None)]["draft"]
@@ -288,7 +298,7 @@ def test_finalize_failed_run_resets_stuck_nodes(memory_repo):
     stub.update_status = lambda run_id, status, **kw: statuses.__setitem__(run_id, status) or True
     workflow_service.workflow_run_repo.update_status = stub.update_status
 
-    workflow_service.finalize_failed_run(1, None, "run-stuck", "KeyError: boom")
+    asyncio.run(workflow_service.finalize_failed_run(1, None, "run-stuck", "KeyError: boom"))
 
     assert statuses["run-stuck"] == "failed"
     after = workflow_service.get_draft(1, None)

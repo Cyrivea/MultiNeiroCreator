@@ -7,6 +7,8 @@
 """
 
 
+import asyncio
+
 import pytest
 
 import core.database as database
@@ -14,6 +16,12 @@ from core.migrations import run_migrations
 from repositories import workflow_run_repo
 from services import workflow_service
 from services.workflow_service import finalize_failed_run, submit_workflow_run
+
+
+@pytest.fixture(autouse=True)
+def _migrated_db(real_db):
+    """自动跑迁移到 latest；这个测试文件不走真实库会什么都通不了。"""
+    run_migrations()
 
 
 @pytest.fixture
@@ -28,13 +36,23 @@ def _create_user(user_id: int) -> None:
     """workflow_drafts 有指向 users 的外键，真库测试必须先把用户建出来。"""
     with database.db_connection() as conn:
         conn.execute(
-            "INSERT INTO users (id, username, password_hash, profile, created_at) "
+            "INSERT OR IGNORE INTO users (id, username, password_hash, profile, created_at) "
             "VALUES (?, ?, 'x', '', '2026-01-01')",
             (user_id, f"inttest-{user_id}@local"),
         )
 
 
+def _ensure_user(user_id: int) -> None:
+    with database.db_connection() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO users (id, username, password_hash, profile, created_at) "
+            "VALUES (?, ?, 'x', '', '2026-01-01')",
+            (user_id, f"itest-{user_id}@b60x.test"),
+        )
+
+
 def _configure_lyrics(user_id: int):
+    _ensure_user(user_id)
     workflow_service.mark_canvas_read(user_id, None)
     return workflow_service.configure_lyrics(
         user_id, None, {"theme": "失恋", "style": "流行抒情", "mood": "忧郁、克制", "language": "中文"}
@@ -93,7 +111,7 @@ def test_crash_finalization_releases_lock(real_db):
     submission = submit_workflow_run(user, None)
 
     # 人为卡住：把 running_draft 落到库，再崩溃
-    finalize_failed_run(user, None, submission["run_id"], "RuntimeError: boom")
+    asyncio.run(finalize_failed_run(user, None, submission["run_id"], "RuntimeError: boom"))
 
     detail = workflow_service.get_run_status_detail(user, None, submission["run_id"])
     assert detail["status"] == "failed"

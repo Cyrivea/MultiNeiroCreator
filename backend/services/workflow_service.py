@@ -901,6 +901,9 @@ async def _execute_snapshot_run(
     workflow_run_repo.update_status(
         run_id, final_status if final_status == "succeeded" else "failed", error=first_error, finished_at=_now()
     )
+    await _notify_run_terminal(
+        user_id, project_id, run_id, final_status, first_error, draft_snapshot
+    )
     return {
         "run_id": run_id,
         "status": final_status,
@@ -909,8 +912,52 @@ async def _execute_snapshot_run(
     }
 
 
-def finalize_failed_run(
-    user_id: int, project_id: int | None, run_id: str, error: str
+async def _notify_run_terminal(
+    user_id: int,
+    project_id: int | None,
+    run_id: str,
+    status: str,
+    error: str | None,
+    draft_snapshot: dict[str, Any],
+) -> None:
+    """运行终态 → 向会话插入一条 system-notice 消息（不刷新聊天轮询可捕）
+
+    这是“会 +(system-notice) 通知”的最后一环；画布颜色由前端快照自己来处理。
+    """
+    names = [
+        str(n.get("name") or n.get("id", "?"))
+        for n in draft_snapshot.get("nodes", [])
+        if n.get("capability_id")
+    ]
+    if status == "succeeded":
+        content = (
+            f"Workflow 已完成（{run_id}）：{', '.join(names) if names else '执行完毕'}。"
+            "结果已写回画布节点。"
+        )
+    else:
+        content = (
+            f"Workflow {'失败' if status=='failed' else '已停止'}（{run_id}）："
+            f"{error or '原因未知'}。节点已标记为失败，请在右侧画布检查参数。"
+        )
+    try:
+        from repositories import chat_repo
+
+        await asyncio.to_thread(
+            chat_repo.append_message, user_id, "system-notice", content, project_id
+        )
+    except Exception:
+        logger.warning(
+            "终态通知插入失败",
+            extra={"evt": "notify_failed", "run_id": run_id},
+        )
+
+
+async def finalize_failed_run(
+    user_id: int,
+    project_id: int | None,
+    run_id: str,
+    error: str,
+    run_snapshot: dict[str, Any] | None = None,
 ) -> None:
     """运行中途崩溃后的“清扫队”：把卡在 running 的节点如实标 failed。
 
@@ -929,6 +976,7 @@ def finalize_failed_run(
     # 收尸失败不阻断主呼喊：CAS 耗尽时上层 job/retry 总会再试一次
     with contextlib.suppress(AppError):
         _mutate_draft_with_cas(user_id, project_id, mark_failed)
+    await _notify_run_terminal(user_id, project_id, run_id, "failed", error, run_snapshot or {})
 
 
 def execute_workflow_run_job(

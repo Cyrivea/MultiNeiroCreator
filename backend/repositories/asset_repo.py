@@ -1,4 +1,5 @@
 """资产表 repo：每次 capability 产出（/api/assets/...）都对应账本一行。
+
 import json
 
 资产文件命名本身是最外层的不可信任标识（uuid hex），库里这一行才是
