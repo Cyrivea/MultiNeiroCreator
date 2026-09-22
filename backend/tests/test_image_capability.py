@@ -10,6 +10,7 @@ from services.capabilities.zhipu_text import ModelNotConfiguredError
 
 
 def _inputs(**kw):
+    kw.setdefault("__styles", "电影概念艺术")
     data = {"prompt": "海边黄昏", "style": "电影概念艺术", "ratio": "1:1", "palette": "深蓝与紫色"}
     data.update(kw)
     return ImageGenerateInput(**data)

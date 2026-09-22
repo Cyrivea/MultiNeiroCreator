@@ -298,7 +298,7 @@ def test_finalize_failed_run_resets_stuck_nodes(memory_repo):
     stub.update_status = lambda run_id, status, **kw: statuses.__setitem__(run_id, status) or True
     workflow_service.workflow_run_repo.update_status = stub.update_status
 
-    asyncio.run(workflow_service.finalize_failed_run(1, None, "run-stuck", "KeyError: boom"))
+    workflow_service.finalize_failed_run(1, None, "run-stuck", "KeyError: boom")
 
     assert statuses["run-stuck"] == "failed"
     after = workflow_service.get_draft(1, None)

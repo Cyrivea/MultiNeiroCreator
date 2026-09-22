@@ -952,7 +952,7 @@ async def _notify_run_terminal(
         )
 
 
-async def finalize_failed_run(
+def finalize_failed_run(
     user_id: int,
     project_id: int | None,
     run_id: str,
@@ -976,7 +976,44 @@ async def finalize_failed_run(
     # 收尸失败不阻断主呼喊：CAS 耗尽时上层 job/retry 总会再试一次
     with contextlib.suppress(AppError):
         _mutate_draft_with_cas(user_id, project_id, mark_failed)
-    await _notify_run_terminal(user_id, project_id, run_id, "failed", error, run_snapshot or {})
+    _notify_run_terminal_sync(user_id, project_id, run_id, "failed", error, run_snapshot)
+
+
+def _notify_run_terminal_sync(
+    user_id: int,
+    project_id: int | None,
+    run_id: str,
+    status: str,
+    error: str | None,
+    draft_snapshot: dict[str, Any] | None,
+) -> None:
+    """同步通知（准点发生）：把“Workflow 已完成/失败”写成聊天侧一条可见消息。"""
+    if status != "succeeded" and not error:
+        return
+    names = [
+        str(n.get("name") or n.get("id", "?"))
+        for n in (draft_snapshot or {}).get("nodes", [])
+        if n.get("capability_id")
+    ]
+    if status == "succeeded":
+        content = (
+            f"Workflow 已完成：{', '.join(names) if names else '执行完毕'}。"
+            "结果已写回画布节点。"
+        )
+    else:
+        content = (
+            f"Workflow {'失败' if status == 'failed' else '已取消'}："
+            f"{error or '原因未知'}。画布节点已标记为失败，请检查参数。"
+        )
+    try:
+        from repositories import chat_repo
+
+        chat_repo.append_message(user_id, "system-notice", content, project_id)
+    except Exception:
+        # 通知失败不影响主流程（写日志排查见下的 log/wrk）
+        import logging as _logging
+
+        _logging.getLogger("workflow").warning("终态通知写入失败: %s", run_id)
 
 
 def execute_workflow_run_job(
