@@ -6,73 +6,83 @@
   </div>
 
   <TransitionGroup v-else name="agent-message-float" tag="div" class="agent-message-list">
-    <div
-      v-for="message in visibleMessages"
-      :key="message.id"
-      class="agent-message"
-      :class="[`is-${message.role}`, { 'is-error': message.isError }]"
-    >
-      <div class="agent-message-meta">
-        <div v-if="message.toolName" class="agent-tool-chip">
-          {{ formatToolName(message.toolName) }}
-        </div>
+    <template v-for="message in visibleMessages" :key="message.id">
+      <!-- 系统通知（如工作流完成/失败）：居中腹带提示，不走对话气泡 -->
+      <div
+        v-if="message.role === 'system-notice'"
+        :key="`notice-${message.id}`"
+        class="agent-message is-system-notice"
+      >
+        <div class="agent-system-notice-pill">{{ message.content }}</div>
       </div>
       <div
-        class="agent-message-bubble"
-        :class="{ 'is-pending': message.isPending && !message.content }"
+        v-else
+        :key="message.id"
+        class="agent-message"
+        :class="[`is-${message.role}`, { 'is-error': message.isError }]"
       >
-        <template v-if="message.isPending && !message.content">
-          <span class="agent-thinking-wave" aria-label="Thinking">
-            <span
-              v-for="(letter, index) in thinkingLetters"
-              :key="`${message.id}-${index}`"
-              class="agent-thinking-letter"
-              :style="{ animationDelay: `${index * 0.06}s` }"
-            >
-              {{ letter }}
-            </span>
-          </span>
-        </template>
-        <template v-else>{{ message.content }}</template>
-        <span v-if="message.interrupted" class="agent-interrupted-mark" title="生成中途被断开">
-          （回复被中断，内容不完整）
-        </span>
-      </div>
-      <div v-if="message.citations?.length" class="agent-message-citations">
-        <div class="agent-citation-title">引用来源</div>
+        <div class="agent-message-meta">
+          <div v-if="message.toolName" class="agent-tool-chip">
+            {{ formatToolName(message.toolName) }}
+          </div>
+        </div>
         <div
-          v-for="(citation, index) in message.citations"
-          :key="`${message.id}-citation-${citation.document_id || citation.source}-${citation.chunk_index}-${index}`"
-          class="agent-citation-item"
+          class="agent-message-bubble"
+          :class="{ 'is-pending': message.isPending && !message.content }"
         >
-          <span class="agent-citation-source">{{ citation.source }}</span>
-          <span>· 片段 {{ citation.chunk_index + 1 }}</span>
+          <template v-if="message.isPending && !message.content">
+            <span class="agent-thinking-wave" aria-label="Thinking">
+              <span
+                v-for="(letter, index) in thinkingLetters"
+                :key="`${message.id}-${index}`"
+                class="agent-thinking-letter"
+                :style="{ animationDelay: `${index * 0.06}s` }"
+              >
+                {{ letter }}
+              </span>
+            </span>
+          </template>
+          <template v-else>{{ message.content }}</template>
+          <span v-if="message.interrupted" class="agent-interrupted-mark" title="生成中途被断开">
+            （回复被中断，内容不完整）
+          </span>
+        </div>
+        <div v-if="message.citations?.length" class="agent-message-citations">
+          <div class="agent-citation-title">引用来源</div>
+          <div
+            v-for="(citation, index) in message.citations"
+            :key="`${message.id}-citation-${citation.document_id || citation.source}-${citation.chunk_index}-${index}`"
+            class="agent-citation-item"
+          >
+            <span class="agent-citation-source">{{ citation.source }}</span>
+            <span>· 片段 {{ citation.chunk_index + 1 }}</span>
+          </div>
+        </div>
+        <div v-if="message.attachments?.length" class="agent-message-attachments">
+          <article
+            v-for="attachment in message.attachments"
+            :key="`${message.id}-${attachment.id}`"
+            class="message-attachment-chip"
+            :class="[`is-${attachment.kind}`]"
+          >
+            <template v-if="attachment.kind === 'image' && attachment.previewUrl">
+              <img
+                class="message-attachment-image"
+                :src="attachment.previewUrl"
+                :alt="attachment.name"
+              />
+            </template>
+            <template v-else>
+              <div class="message-attachment-icon" aria-hidden="true">{{ attachment.badge }}</div>
+            </template>
+            <div class="message-attachment-copy">
+              <div class="message-attachment-name">{{ attachment.name }}</div>
+              <div class="message-attachment-meta">{{ attachment.meta }}</div>
+            </div>
+          </article>
         </div>
       </div>
-      <div v-if="message.attachments?.length" class="agent-message-attachments">
-        <article
-          v-for="attachment in message.attachments"
-          :key="`${message.id}-${attachment.id}`"
-          class="message-attachment-chip"
-          :class="[`is-${attachment.kind}`]"
-        >
-          <template v-if="attachment.kind === 'image' && attachment.previewUrl">
-            <img
-              class="message-attachment-image"
-              :src="attachment.previewUrl"
-              :alt="attachment.name"
-            />
-          </template>
-          <template v-else>
-            <div class="message-attachment-icon" aria-hidden="true">{{ attachment.badge }}</div>
-          </template>
-          <div class="message-attachment-copy">
-            <div class="message-attachment-name">{{ attachment.name }}</div>
-            <div class="message-attachment-meta">{{ attachment.meta }}</div>
-          </div>
-        </article>
-      </div>
-    </div>
+    </template>
   </TransitionGroup>
 </template>
 
@@ -176,6 +186,23 @@ const visibleMessages = computed(() =>
 .agent-message.is-assistant,
 .agent-message.is-error {
   align-items: flex-start;
+}
+
+/* B28：后台任务终态的系统通知（工作流完成/失败），居中腹带提示 */
+.agent-message.is-system-notice {
+  align-items: center;
+}
+
+.agent-system-notice-pill {
+  max-width: 92%;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.62));
+  background: rgba(122, 162, 255, 0.08);
+  border: 1px solid rgba(122, 162, 255, 0.18);
 }
 
 .agent-message-meta {

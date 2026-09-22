@@ -258,6 +258,7 @@ import CreativeToolPicker from '@/components/creative/CreativeToolPicker.vue'
 import CreativeToolPanel from '@/components/creative/CreativeToolPanel.vue'
 import WorkflowCanvas from '@/components/workflow/WorkflowCanvas.vue'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
+import { JOB_TERMINAL_EVENT } from '@/utils/jobTransitions'
 import '@/views/workstation/styles/workstation-base.css'
 
 // 真实进度接管：让工作站初始化阶段能推动 loadingStore.setProgress(),
@@ -543,15 +544,24 @@ function loadCreativeWorkspace(projectId: number | null) {
 
 watch(projectId, loadCreativeWorkspace, { immediate: true })
 
+// B28：后台任务（如助手提交的 workflow）落地时，把聊天里的 system-notice 及时刷进来。
+// 助手正在流式输出时先不刷——stream done 事件会带完整历史，强行重载会清掉正在打的气泡。
+function handleJobTerminal() {
+  if (chatStore.isSending) return
+  void assistantPanelRef.value?.loadHistory()
+}
+
 onMounted(() => {
   taskStore.startPolling(projectId)
   document.addEventListener('click', handleDocumentClick)
+  window.addEventListener(JOB_TERMINAL_EVENT, handleJobTerminal)
   void initializeWorkspaceFromEntryPoint()
 })
 
 onBeforeUnmount(() => {
   taskStore.stopPolling()
   document.removeEventListener('click', handleDocumentClick)
+  window.removeEventListener(JOB_TERMINAL_EVENT, handleJobTerminal)
 })
 </script>
 

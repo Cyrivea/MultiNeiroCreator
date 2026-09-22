@@ -18,7 +18,7 @@ export interface AgentCitation {
 }
 
 export interface AgentHistoryItem {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system-notice'
   content: string
   attachments?: AgentAttachmentItem[]
   citations?: AgentCitation[]

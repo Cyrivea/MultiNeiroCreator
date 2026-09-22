@@ -10,6 +10,13 @@ import type { WorkflowDraft } from '@/serve/workflow'
 vi.mock('@/utils/toast', () => ({
   ElMessage: { warning: vi.fn(), error: vi.fn(), success: vi.fn() },
 }))
+// workflow store → tasks store：终态通知的弹层/声音也不进 vitest（B28）
+vi.mock('@/utils/notification', () => ({
+  ElNotification: vi.fn(),
+}))
+vi.mock('@/utils/notifySound', () => ({
+  playTaskCompleteSound: vi.fn(),
+}))
 vi.mock('@/serve/workflow', () => ({
   getWorkflowDraft: vi.fn(),
   saveWorkflowDraft: vi.fn(),

@@ -14,7 +14,7 @@ import {
 
 export interface AgentMessage {
   id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system-notice'
   content: string
   toolName?: string | null
   isError?: boolean

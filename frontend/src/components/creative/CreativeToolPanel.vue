@@ -377,12 +377,7 @@
               <span>图像生成结果</span>
               <span class="result-meta">最新一次运行</span>
             </header>
-            <img
-              v-if="imageResultUrl"
-              class="result-image"
-              :src="imageResultUrl"
-              alt="生成图"
-            />
+            <img v-if="imageResultUrl" class="result-image" :src="imageResultUrl" alt="生成图" />
             <pre v-else class="result-content">{{ toolRun.content }}</pre>
           </section>
           <section
@@ -417,6 +412,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from '@/utils/toast'
+import { playTaskCompleteSound } from '@/utils/notifySound'
 import { useCreativeToolsStore } from '@/stores/creativeTools'
 import { useToolRunsStore } from '@/stores/toolRuns'
 import { useWorkflowStore, WORKFLOW_INPUT_ID } from '@/stores/workflow'
@@ -555,8 +551,10 @@ async function generateBlock() {
     const record = toolRunsStore.records[currentTool.id]
     if (status === 'succeeded') {
       ElMessage.success(currentTool.type === 'image' ? '图像生成完成' : '歌词生成完成')
+      playTaskCompleteSound('success')
     } else {
       ElMessage.error(record?.error ?? generationFailureText.value)
+      playTaskCompleteSound('error')
     }
   } catch {
     toolRunsStore.setRecord(currentTool.id, {

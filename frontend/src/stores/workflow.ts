@@ -15,6 +15,7 @@ import {
   type WorkflowDraftResponse,
 } from '@/serve/workflow'
 import { waitForAgentJob } from '@/serve/agent'
+import { useTaskStore } from './tasks'
 
 export type { WorkflowCandidate } from '@/serve/workflow'
 
@@ -445,6 +446,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
     try {
       const job = await waitForAgentJob(submission.job_id)
+      // B28 防重复提醒：手动运行路径的组件自己会弹 toast + 提示音，
+      // 登记给 tasks 轮询，别再重复弹第二次通知。
+      useTaskStore().markTerminalNotified(job.id)
       await refreshFromServer(currentProjectId.value)
       const jobStatus = (job.result?.status as ToolRunStatus | undefined) ?? job.status
       if (jobStatus === 'succeeded') return 'succeeded'
