@@ -79,9 +79,22 @@ def generate_image(inputs: ImageGenerateInput) -> dict[str, Any]:
     path = _assets_dir() / filename
     path.write_bytes(downloaded.content)
 
+    # 关灯资产表登记：文件名是不可信任的票据，身份还是必须落账才能回答
+    # “这图是哪个用户哪个项目哪个 run 调的，花了多少”——usage_events 里那条就是这次的
+    import uuid as _uuid
+
+    asset_row = {
+        "asset_id": f"asset-{_uuid.uuid4().hex[:12]}",
+        "filename": filename,
+        "path": f"/api/assets/{filename}",
+        "capability_id": "image.generate",
+        "prompt_snapshot": inputs.model_dump(),
+    }
+
     return {
         "content": f"![曲绘](/api/assets/{filename})",
         "asset_path": f"/api/assets/{filename}",
+        "asset": asset_row,
         "usage": {
             "model": config.IMAGE_MODEL,
             "prompt_tokens": 0,

@@ -26,7 +26,7 @@ for _k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.injection_guard import verdict  # noqa: E402
+from core.injection_guard import verdict
 
 RESULT_PATH = Path(__file__).resolve().parents[1] / "eval_injection_result.json"
 

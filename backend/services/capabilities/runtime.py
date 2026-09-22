@@ -138,6 +138,32 @@ def _register() -> dict[str, CapabilityEntry]:
 CAPABILITY_REGISTRY: dict[str, CapabilityEntry] = _register()
 
 
+async def _write_asset(asset: dict, context: CapabilityContext) -> None:
+    """把一次 capability 产出的资产插进资产表（不阻塞主链路）。"""
+    try:
+        from repositories import asset_repo
+
+        await asyncio.to_thread(
+            asset_repo.insert,
+            user_id=context.user_id,
+            project_id=context.project_id,
+            run_id=None,
+            capability_id=asset["capability_id"],
+            kind="image",
+            filename=asset["filename"],
+            content_type="image/png",
+            byte_size=0,
+            prompt_snapshot=asset.get("prompt_snapshot"),
+            usage_event_id=None,
+            created_at=datetime.now(UTC).isoformat(),
+        )
+    except Exception as exc:
+        logger.warning(
+            "资产登记失败（不阻塞生成）",
+            extra={"evt": "asset_register_failed", "error_type": type(exc).__name__},
+        )
+
+
 async def run_capability(
     capability_id: str,
     inputs: dict[str, Any],
@@ -229,6 +255,11 @@ async def run_capability(
         duration_ms=duration_ms,
         usage=usage,
     )
+
+    # 用电资产登记账本：任何 capability 返回的 "asset" 字典会插入 assets 表
+    asset = output.get("asset") if isinstance(output, dict) else None
+    if asset:
+        await _write_asset(asset, context)
 
     logger.info(
         "能力执行完成",

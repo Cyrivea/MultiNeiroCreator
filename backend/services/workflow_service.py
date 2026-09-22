@@ -62,11 +62,11 @@ def _ensure_canvas_read(user_id: int, project_id: int | None, draft: dict[str, A
         return
     if _canvas_read_stamp.get() == (user_id, project_id):
         return
-    # 代理代读：记录实际看到了什么（后面排查/报告能用），然后相当于已读
+
     get_workflow_summary(user_id, project_id)
     mark_canvas_read(user_id, project_id)
 
-# 每个 capability 在画布上的展示元信息；图片/视频/音频 await real Provider，UI 先按此占位。
+
 CAPABILITY_META: dict[str, dict[str, Any]] = {
     "lyrics.generate": {
         "type": "lyrics",
@@ -639,7 +639,7 @@ def get_active_run(user_id: int, workflow_id: int | None) -> dict[str, Any] | No
     try:
         job = job_service.get_job(user_id, str(job_id))
     except Exception:
-        return run  # job 查不到不猜，保守保持锁定
+        return run
     if job["status"] in _JOB_TERMINAL_STATUSES:
         finalize_failed_run(
             user_id,

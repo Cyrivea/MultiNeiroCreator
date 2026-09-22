@@ -319,6 +319,38 @@ def _m011_add_run_env_snapshot(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE workflow_runs ADD COLUMN env_snapshot_json TEXT")
 
 
+def _m012_create_assets(conn: sqlite3.Connection) -> None:
+    """生产资料资产表：每次生成的图片/以后音/视频至少要能回答"
+
+    「它是哪个 user/哪个 project/哪个 run/哪个 prompt 出的、何时、多大、源自哪个报价版本」
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS assets (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+            run_id TEXT REFERENCES workflow_runs(id) ON DELETE SET NULL,
+            capability_id TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('image','audio','video','text')),
+            filename TEXT NOT NULL,
+            content_type TEXT NOT NULL,
+            byte_size INTEGER NOT NULL,
+            prompt_snapshot_json TEXT NULL,
+            usage_event_id INTEGER REFERENCES usage_events(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_assets_user_project "
+        "ON assets(user_id, project_id, created_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_assets_run ON assets(run_id)"
+    )
+
+
 def _m010_add_message_interrupted(conn: sqlite3.Connection) -> None:
     """SSE 断连截断标记：消息可能只生成了一半（客户端断开/上游中断），
     落库时必须带标，否则用户重进看到的是一条莫名的话。"""
@@ -339,6 +371,7 @@ MIGRATIONS: list[Migration] = [
     ("create usage ledger", _m009_create_usage_events),
     ("add message interrupted flag", _m010_add_message_interrupted),
     ("add run env snapshot", _m011_add_run_env_snapshot),
+    ("create assets ledger", _m012_create_assets),
 ]
 
 
