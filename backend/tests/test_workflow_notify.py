@@ -18,6 +18,29 @@ def db(tmp_path, monkeypatch):
     return db_path
 
 
+@pytest.fixture(autouse=True)
+def _offline_capabilities(monkeypatch):
+    """通知链路测的是状态机，不是 Provider 的网络/密钥——全部走离线替身。
+
+    历史教训：这个文件曾依赖本机 .env 里的真密钥才能过，CI 上变
+    model_unavailable → “已完成”断言全红。
+    """
+    from dataclasses import replace
+
+    from services.capabilities import runtime
+
+    def fake_executor(inputs):
+        return {
+            "content": "测试输出",
+            "usage": {"model": "test-model", "prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+        }
+
+    for cid in tuple(runtime.CAPABILITY_REGISTRY):
+        monkeypatch.setitem(
+            runtime.CAPABILITY_REGISTRY, cid, replace(runtime.CAPABILITY_REGISTRY[cid], executor=fake_executor)
+        )
+
+
 def _create_user(uid: int) -> None:
     with database.db_connection() as conn:
         conn.row_factory = sqlite3.Row

@@ -26,7 +26,11 @@ _JAILBREAK = re.compile(
     r"解除(?:限制|规则)|"
     r"无视(?:规则|提示)|"
     r"忽略所有|"
+    r"忘掉.{0,12}(?:指令|规则|系统提示)|"
     r"ignore\s+(?:all|the).*instru(?:ction)?s?|"
+    # 英文变装：ignore the rules / disregard prior directions（不能每次聊天都烧 embedding 才拦住这些）
+    r"ignore\s+(?:all\s+|the\s+)?(?:the\s+)?(?:previous|earlier|prior\s+)?(?:\w+\s+){0,2}rules|"
+    r"disregard\s+\w+\s+(?:earlier|prior|previous)?\s*(?:directions|instructions|rules|constraints)|"
     r"forget\s+(?:everything|all)??|"
     r"DAN|jailbreak",
     re.IGNORECASE | re.UNICODE,
@@ -36,7 +40,11 @@ _JAILBREAK = re.compile(
 _PROMPT_LEAK = re.compile(
     r"你.{0,8}(?:system prompt|系统提示|初始指令)|"
     r"告诉我.{0,8}(?:规则|指令)prompt|"
-    r"你预设的词是|prompt 是什么"
+    r"你预设的词是|prompt 是什么|"
+    # 英文直询 + 日文敬语句：prompt 出口探针
+    r"(?:output|show|reveal|print|tell me).{0,25}your\s+(?:system\s+)?prompt|"
+    r"システムプロンプト|プロンプトを(?:見せ|教え|表示)",
+    re.IGNORECASE,
 )
 
 # 第二层：注入参考语料（embedding 语义近似；中英文堆积无效唯一正试）

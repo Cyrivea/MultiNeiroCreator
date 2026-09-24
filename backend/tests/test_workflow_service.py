@@ -276,11 +276,14 @@ def test_get_run_status_detail_404_when_no_runs(memory_repo, monkeypatch):
 # ---------- 崩溃收尸（防卡死）：运行中断后running 节点/运行状态必须复位成 failed ----------
 
 
-def test_finalize_failed_run_resets_stuck_nodes(memory_repo):
-    # system-notice 落账走真 SQLite，先把 user=1 建出来（FK 约束）
-    with pytest.MonkeyPatch.context() as _ctx:
-        pass  # 只依赖 memory_repo stub 挡不住通知筹法外键
-    from core import database
+def test_finalize_failed_run_resets_stuck_nodes(memory_repo, tmp_path, monkeypatch):
+    # system-notice 落账走真 SQLite——但必须是测试专属库，不是开发机的真实库。
+    # 历史教训：之前这里连全局 database（本地开发库恰好存在而过去了，CI 空库直接炸，
+    # 而且测试还会往开发库写入脏数据）。
+    from core import database, migrations
+
+    monkeypatch.setattr(database, "DB_FILE", tmp_path / "wf-service.db")
+    migrations.run_migrations()
 
     with database.db_connection() as conn:
         conn.execute(
