@@ -1,14 +1,13 @@
 """workflow 完成/失败通知（最后一环）：终态必须往聊天表插一条 system-notice。"""
 
-import asyncio
 import sqlite3
 
 import pytest
 
 import core.database as database
 from core.migrations import run_migrations
+from repositories import chat_repo
 from services import workflow_service
-from repositories import chat_repo, workflow_run_repo
 
 
 @pytest.fixture
