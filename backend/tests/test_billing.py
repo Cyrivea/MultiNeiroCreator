@@ -68,8 +68,8 @@ def test_grant_and_balance(billing_db):
     result = billing_service.grant_plan_credits(billing_db, "plus", Decimal("50"), 30)
     balance = billing_service.get_balance(billing_db)
     assert result["credits"] == "50"
-    assert balance["plan_credits"] == "50.000000"
-    assert balance["prepaid_credits"] == "0.000000"
+    assert balance["plan_credits"] == "50"
+    assert balance["prepaid_credits"] == "0"
     assert any(entry["type"] == "subscription_grant" for entry in balance["recent_ledger"])
 
 
@@ -209,7 +209,7 @@ def test_expire_subscriptions_zeroes_plan_credits_once(billing_db):
     ledger = billing_service.get_balance(billing_db)["recent_ledger"]
     expires = [entry for entry in ledger if entry["type"] == "expiration"]
     assert len(expires) == 1
-    assert expires[0]["amount_credits"] == "-8.000000"
+    assert expires[0]["amount_credits"] == "-8"
 
 
 def test_plan_priority_plan_bucket_first(billing_db):
@@ -234,6 +234,59 @@ def test_plan_priority_plan_bucket_first(billing_db):
     assert account["plan_reserved_micro"] == 1_500_000
     assert account["prepaid_available_micro"] == 2_500_000
     assert account["prepaid_reserved_micro"] == 500_000
+
+
+# ===== I6：预付余额充值与超额扣减 =====
+
+
+def test_top_up_then_overflow_burns_prepaid(billing_db):
+    """I6 验收：套餐用尽后按量扣预付；充值走正式入口而非手戳账户。"""
+    billing_service.grant_plan_credits(billing_db, "test", Decimal("1"), 30)
+    result = billing_service.top_up_prepaid(billing_db, Decimal("5"), "order:i6")
+    assert result == {"duplicate": False, "prepaid_credits": "5"}
+
+    # 预占3：套餐桶全部 1 + 预付桶 2
+    billing_service.reserve(billing_db, "resv:i6", Decimal("3"))
+    # 实销 2.5（1000入×1.0/1k + 500出×2.0/1k + 0.5/次）：套餐出 1，预付出 1.5，退 0.5 回预付
+    billed = billing_service.settle("resv:i6", "test-model", 1000, 500)
+    assert billed == Decimal("2.5")
+
+    account = _account(billing_db)
+    assert account["plan_available_micro"] == 0
+    assert account["prepaid_available_micro"] == 3_500_000
+    assert account["plan_reserved_micro"] == 0
+    assert account["prepaid_reserved_micro"] == 0
+
+
+def test_top_up_is_idempotent_on_order_reference(billing_db):
+    """支付回调重发同一订单号只入账一次。"""
+    billing_service.top_up_prepaid(billing_db, Decimal("5"), "order:dup")
+    replay = billing_service.top_up_prepaid(billing_db, Decimal("5"), "order:dup")
+    assert replay["duplicate"] is True
+    assert replay["prepaid_credits"] == "5"
+    with db_connection() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM credit_ledger WHERE type='top_up' AND reference_id='order:dup'"
+        ).fetchone()[0]
+    assert count == 1
+
+
+def test_top_up_rejects_non_positive(billing_db):
+    with pytest.raises(billing_service.BillingError):
+        billing_service.top_up_prepaid(billing_db, Decimal("0"), "order:zero")
+    with pytest.raises(billing_service.BillingError):
+        billing_service.top_up_prepaid(billing_db, Decimal("-1"), "order:neg")
+
+
+def test_both_buckets_insufficient_rejected(billing_db):
+    """两桶加起来不够也必须拒绝，且两桶余额分文不动（不允许负余额）。"""
+    billing_service.grant_plan_credits(billing_db, "test", Decimal("1"), 30)
+    billing_service.top_up_prepaid(billing_db, Decimal("1"), "order:small")
+    with pytest.raises(billing_service.InsufficientCreditsError):
+        billing_service.reserve(billing_db, "resv:toobig", Decimal("3"))
+    account = _account(billing_db)
+    assert account["plan_available_micro"] == 1_000_000
+    assert account["prepaid_available_micro"] == 1_000_000
 
 
 # ===== Runtime 集成：enforce 拒上游 / track 只记账 =====
@@ -308,6 +361,6 @@ def test_runtime_track_mode_logs_but_never_blocks(billing_db, staging_entry, mon
     assert staging_entry == ["executor"]
     # track 不走预占（欠费也不拦）：账本没扣，甚至账户行都没建
     balance = billing_service.get_balance(billing_db)
-    assert balance["plan_credits"] == "0.000000"
-    assert balance["plan_reserved_credits"] == "0.000000"
+    assert balance["plan_credits"] == "0"
+    assert balance["plan_reserved_credits"] == "0"
     assert balance["recent_ledger"] == []

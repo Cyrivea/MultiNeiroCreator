@@ -31,3 +31,15 @@ class TestGrantResponse(BaseModel):
     subscription_id: int
     credits: str
     period_end: str
+
+
+class TestTopUpRequest(BaseModel):
+    credits: Decimal = Field(default=Decimal("50"), gt=0, le=Decimal("100000"))
+    # 模拟订单号：不传则服务端生成；传了可验证幂等（同号重发不重复入账）
+    order_reference: str | None = Field(default=None, max_length=128)
+
+
+class TestTopUpResponse(BaseModel):
+    duplicate: bool
+    prepaid_credits: str
+    order_reference: str

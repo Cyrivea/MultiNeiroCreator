@@ -59,7 +59,15 @@ def credits_to_micro(credits: Decimal) -> int:
 
 
 def micro_to_credits(micro: int) -> Decimal:
-    return (Decimal(micro) / MICRO_PER_CREDIT).quantize(Decimal("0.000001"))
+    """micro 整数 → Decimal 积分，剔掉尾零（对外展示 "5" 而非 "5.000000"）。
+
+    注意 `Decimal.normalize()` 的坑：整十倍数会变科学计数法（50 → 5E+1），
+    所以整数值要再 quantize 回整数形态。
+    """
+    value = (Decimal(micro) / MICRO_PER_CREDIT).normalize()
+    if value == value.to_integral_value():
+        return value.quantize(Decimal("1"))
+    return value
 
 
 def add_price_version(
@@ -170,6 +178,69 @@ def grant_plan_credits(
         },
     )
     return {"subscription_id": subscription_id, "credits": str(credits), "period_end": period_end}
+
+
+def top_up_prepaid(user_id: int, credits: Decimal, reference_id: str) -> dict[str, Any]:
+    """预付余额充值入账（阶段 1 为模拟订单，真实支付回调后置）。
+
+    幂等：同一 reference_id（将来对应支付订单号，回调可能重发）只入账一次，
+    靠 ledger (type, reference_id) 唯一索引 + 事务内先查后写双重兑底。
+    套餐额度用尽后自动改扣预付余额的顺序逻辑在 ``_reserve_split``，
+    本函数只负责往预付桶里加水。
+    """
+    if credits <= 0:
+        raise BillingError("充值金额必须为正数")
+    micro = credits_to_micro(credits)
+    now = _utcnow()
+
+    with db_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if billing_repo.ledger_entry_exists(conn, "top_up", reference_id):
+            # 幂等重放：同一订单号已入过账，直接返回现状，不重复加钱
+            account = billing_repo.get_account(conn, user_id)
+            assert account is not None
+            return {
+                "duplicate": True,
+                "prepaid_credits": str(micro_to_credits(account["prepaid_available_micro"])),
+            }
+        billing_repo.ensure_account(conn, user_id, now)
+        account = billing_repo.get_account(conn, user_id)
+        assert account is not None
+        billing_repo.update_account(
+            conn,
+            user_id,
+            plan_available=account["plan_available_micro"],
+            plan_reserved=account["plan_reserved_micro"],
+            prepaid_available=account["prepaid_available_micro"] + micro,
+            prepaid_reserved=account["prepaid_reserved_micro"],
+            now=now,
+        )
+        account = billing_repo.get_account(conn, user_id)
+        assert account is not None
+        billing_repo.insert_ledger(
+            conn,
+            user_id,
+            micro,
+            account["plan_available_micro"],
+            account["prepaid_available_micro"],
+            "top_up",
+            reference_id,
+            f"预付余额充值 {credits} 积分（模拟订单）",
+            now,
+        )
+    logger.info(
+        "预付余额已入账",
+        extra={
+            "evt": "prepaid_topped_up",
+            "user_id": user_id,
+            "credits": str(credits),
+            "reference_id": reference_id,
+        },
+    )
+    return {
+        "duplicate": False,
+        "prepaid_credits": str(micro_to_credits(account["prepaid_available_micro"])),
+    }
 
 
 def expire_subscriptions(now: str | None = None) -> int:

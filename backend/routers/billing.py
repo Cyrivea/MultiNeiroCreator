@@ -6,13 +6,20 @@
 """
 
 import asyncio
+import uuid
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from core import config
 from core.deps import verify_token
-from schemas.billing import BalanceResponse, TestGrantRequest, TestGrantResponse
+from schemas.billing import (
+    BalanceResponse,
+    TestGrantRequest,
+    TestGrantResponse,
+    TestTopUpRequest,
+    TestTopUpResponse,
+)
 from services import billing_service
 
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -37,3 +44,15 @@ async def test_grant(req: TestGrantRequest, user=Depends(verify_token)):
         credits,
         req.period_days or config.BILLING_TEST_GRANT_PERIOD_DAYS,
     )
+
+
+@router.post("/test-topup", response_model=TestTopUpResponse)
+async def test_topup(req: TestTopUpRequest, user=Depends(verify_token)):
+    """向当前用户预付余额充值（模拟订单，真实支付回调后置）。"""
+    if not config.BILLING_TEST_GRANTS_ENABLED:
+        raise HTTPException(status_code=403, detail="测试放款未启用（BILLING_TEST_GRANTS_ENABLED=off）")
+    reference = req.order_reference or f"order:test:{uuid.uuid4().hex}"
+    result = await asyncio.to_thread(
+        billing_service.top_up_prepaid, user["id"], req.credits, reference
+    )
+    return {**result, "order_reference": reference}
