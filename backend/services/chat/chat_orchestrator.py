@@ -25,11 +25,18 @@ from starlette.concurrency import iterate_in_threadpool
 from agents.neyria import client
 from agents.tools.registry import tools_map, tools_schema
 from core import config
+from core.injection_guard import (
+    RULE_OF_TWO_REFUSAL,
+    STATE_CHANGING_TOOLS,
+    UNTRUSTED_INGRESS_TOOLS,
+    guard_untrusted_content,
+    scan_assistant_reply,
+)
 from repositories.chat_repo import append_message
 from services.capabilities import CapabilityContext, use_capability_context
 from services.chat.context_builder import build_chat_context
 from services.chat.intent_classifier import classify as classify_intent
-from services.chat.tool_executor import execute_tool
+from services.chat.tool_executor import ToolOutcome, execute_tool
 from services.workflow_service import reset_canvas_read_stamp
 
 # 模型名统一走环境变量（config.CHAT_MODEL），不在代码里写死
@@ -303,6 +310,8 @@ async def _orchestrate(
     tool_rounds = 0
     hollow_claim_corrected = False
     force_tool_choice_once = False
+    # Rule of Two（C19-②）：本轮一旦引入过不可信网络内容，状态变更类工具即被冻结
+    untrusted_ingress_seen = False
     llm_started = time.perf_counter()
     first_token_at: float | None = None
     stream: Any = None  # 上游 SSE 流对象（智谱 SDK Stream），中断时要 close 停止计费
@@ -325,8 +334,16 @@ async def _orchestrate(
                 "我注意到这条消息包含了不合适的指令模式。"
                 "请你说明白你到底想要什么，我可以帮你正常做。"
             )
+            # C19-④：拦截也要落库——审计需要会话痕迹，用户刷新后也不该“平空消失一轮”
+            await asyncio.to_thread(
+                append_message, user["id"], "user", ctx.persist_text, project_id, ctx.attachments
+            )
+            await asyncio.to_thread(
+                append_message, user["id"], "assistant", blocked_message, project_id
+            )
+            blocked_history = [*ctx.clean_history, {"role": "assistant", "content": blocked_message}]
             yield _sse({"type": "content", "content": blocked_message})
-            yield _sse({"type": "done", "history": ctx.clean_history, "tool_used": None, "citations": []})
+            yield _sse({"type": "done", "history": blocked_history, "tool_used": None, "citations": []})
             return
 
         # ReAct 主循环：前 MAX_TOOL_ROUNDS 轮允许工具；最后一轮强制"只许说话"收尾
@@ -428,6 +445,21 @@ async def _orchestrate(
                     # 超额调用不执行，但必须应答该 tool_call_id，否则下一轮请求非法
                     messages.append({"role": "tool", "content": TOOL_SKIPPED_RESULT, "tool_call_id": call["id"]})
                     continue
+                if untrusted_ingress_seen and call["name"] in STATE_CHANGING_TOOLS:
+                    # Rule of Two：搜索结果（可能埋指令）已入上下文，状态变更不执行，
+                    # 把拒绝原因回填给模型让它如实转告用户
+                    logger.warning(
+                        "Rule of Two 拦截状态变更工具",
+                        extra={"evt": "rule_of_two_blocked", "tool": call["name"]},
+                    )
+                    refusal_outcome = ToolOutcome(result=RULE_OF_TWO_REFUSAL, ok=False)
+                    tool_outcomes.append(
+                        _summarize_tool_outcome(call["name"], refusal_outcome, RULE_OF_TWO_REFUSAL)
+                    )
+                    messages.append(
+                        {"role": "tool", "content": RULE_OF_TWO_REFUSAL, "tool_call_id": call["id"]}
+                    )
+                    continue
                 yield _sse({"type": "tool", "tool_name": call["name"]})
                 # 跑腿的绝不抛异常：成功/被拒/失败都是一张结果单，这里不分叉
                 with use_capability_context(
@@ -442,6 +474,10 @@ async def _orchestrate(
                 # 工具可以携带界面事件（如 Workflow Draft 快照），立即透传给前端；
                 # 剥离后再回填模型，避免模型把 Draft 当成歌词内容。
                 model_result, ui_events = split_ui_events(outcome.result)
+                if call["name"] in UNTRUSTED_INGRESS_TOOLS:
+                    # C19-②：网络内容回填模型前 scrub+围栏，并触发 Rule of Two 冻结
+                    untrusted_ingress_seen = True
+                    model_result = guard_untrusted_content(model_result, "网络搜索结果")
                 for ui_event in ui_events:
                     yield _sse(ui_event)
                 tools_used.append(call["name"])
@@ -457,6 +493,15 @@ async def _orchestrate(
         if not reply.strip():
             reply = _compose_action_receipt(tool_outcomes)
             yield _sse({"type": "content", "content": reply})
+
+        # C19-① 输出层接线：流式内容已逐 token 发出，无法事后撤回，
+        # 这里做终态扫描留审计痕迹（阯断式输出防护需要改缓冲架构，归停车场）
+        leak = scan_assistant_reply(reply)
+        if leak.get("leaked"):
+            logger.warning(
+                "回复疑似携带内部提示词内容",
+                extra={"evt": "prompt_leak_suspected", "markers": leak["markers"]},
+            )
     except (GeneratorExit, asyncio.CancelledError):
         # GeneratorExit/CancelledError 不走 except Exception 通道，必须单独拦：
         # 关上游流（停止继续计费）+ 落库半截回复（用户重进还能看到）

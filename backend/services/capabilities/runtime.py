@@ -227,7 +227,13 @@ async def run_capability(
     *,
     context: CapabilityContext,
 ) -> CapabilityResult:
-    """执行一个受控生产能力，Provider 细节不向调用入口泄露。"""
+    """执行一个受控生产能力，Provider 细节不向调用入口泄露。
+
+    安全边界声明（C19-③，有意决策）：capability 输入不过聊天层注入守卫——
+    这里是单轮生成（无工具权限、无对话状态、接触不到系统提示以外的机密），
+    注入只能影响用户自己这一次的生成结果，爆炸半径≈ 0；
+    内容合规（色情/违法 prompt）是另一个范畴，属 Provider 内容安全职责。
+    """
     entry = CAPABILITY_REGISTRY.get(capability_id)
     if entry is None:
         return CapabilityResult(capability_id=capability_id, status="failed", error="不支持的生产能力")

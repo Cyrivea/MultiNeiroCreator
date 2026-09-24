@@ -402,3 +402,64 @@ def test_hollow_claim_detector_partial_tools():
     assert not _claims_action_without_tools(
         "先别跑，把歌词主题改成海边", "已修改参数", ["configure_lyrics_workflow"]
     )
+
+
+# ---------- C19：注入拦截落库 + Rule of Two ----------
+
+
+def test_injection_block_is_persisted(monkeypatch, persisted):
+    """被拦截的对话必须留会话痕迹：用户消息 + 拦截回复都落库（C19-④）。"""
+    monkeypatch.setattr(
+        "core.injection_guard.verdict",
+        lambda message="", rag_text="", reply="": {"action": "block", "reasons": ["jailbreak_pattern"], "severity": "high"},
+    )
+    fake, events = run_chat(monkeypatch, [])  # 拦截路径不应碰 LLM，空剧本能跑完即证明
+    assert fake.calls == []
+    roles = [r for r, _ in persisted]
+    assert roles == ["user", "assistant"]
+    assert "不合适的指令模式" in persisted[1][1]
+    assert events_of(events, "done")[0]["history"][-1]["role"] == "assistant"
+
+
+def test_rule_of_two_blocks_state_change_after_search(monkeypatch, persisted):
+    """search_web 结果进上下文后，同轮的状态变更工具必须被冻结且原因回填模型。"""
+    executed = []
+
+    async def fake_execute(func_name, func_args):
+        executed.append(func_name)
+        return ToolOutcome(result="搜到的网页内容", ok=True)
+
+    monkeypatch.setattr(chat_orchestrator, "execute_tool", fake_execute)
+    script = [
+        tool_call_stream((0, "call_s", "search_web", '{"query": "热点"}')),
+        tool_call_stream((0, "call_c", "run_current_workflow", "{}")),
+        content_stream("好的"),
+    ]
+    fake, _events = run_chat(monkeypatch, script)
+
+    # 只有 search_web 真执行了；run_current_workflow 被策略拦下
+    assert executed == ["search_web"]
+    # 搜索结果带上了不可信围栏再回填模型（messages 列表被各轮原地复用，按 id 定位）
+    final_messages = fake.calls[-1]["messages"]
+    by_id = {m.get("tool_call_id"): m["content"] for m in final_messages if m.get("role") == "tool"}
+    assert "<<<不可信内容开始（网络搜索结果）>>>" in by_id["call_s"]
+    assert "搜到的网页内容" in by_id["call_s"]
+    # 状态变更工具的 tool 结果是拒绝文案
+    assert "安全策略拒绝" in by_id["call_c"]
+
+
+def test_state_change_without_search_still_works(monkeypatch, persisted):
+    """没有不可信输入时状态变更工具照常执行——Rule of Two 不能误伤正常链路。"""
+    executed = []
+
+    async def fake_execute(func_name, func_args):
+        executed.append(func_name)
+        return ToolOutcome(result='{"status": "queued"}', ok=True)
+
+    monkeypatch.setattr(chat_orchestrator, "execute_tool", fake_execute)
+    script = [
+        tool_call_stream((0, "call_c", "run_current_workflow", "{}")),
+        content_stream("已提交"),
+    ]
+    _fake, _events = run_chat(monkeypatch, script)
+    assert executed == ["run_current_workflow"]

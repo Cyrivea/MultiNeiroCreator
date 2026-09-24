@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from agents.neyria import build_system_prompt
 from core import config
+from core.injection_guard import guard_untrusted_content
 from repositories.chat_repo import list_history
 from repositories.user_repo import get_profile
 from services.rag import get_document_chunk_hits, search_with_metadata
@@ -129,7 +130,9 @@ def build_attachment_context(
             continue
 
         snippet = content[:remaining]
-        sections.append(f"[附件 {attachment['name']}]\n{snippet}")
+        # C19-①：附件内容是用户上传的不可信数据——投毒文档可能藏指令，
+        # 先副注入行再上 Spotlighting 围栏，不再裸拼进 system prompt
+        sections.append(guard_untrusted_content(snippet, f"附件 {attachment['name']}"))
         consumed += len(snippet)
 
     return "\n\n".join(sections), citations
@@ -155,7 +158,10 @@ def build_retrieved_context(
             continue
         source = str(hit.get("source", "未知文档"))
         chunk_index = int(hit.get("chunk_index", 0)) + 1
-        sections.append(f"[来源：{source}｜片段 {chunk_index}]\n{content}")
+        # C19-①：检索命中的文档片段同样是不可信数据，scrub+围栏双保险
+        sections.append(
+            guard_untrusted_content(content, f"来源：{source}｜片段 {chunk_index}")
+        )
         citations.append(_citation_from_hit(hit, source))
 
     joined = "\n\n".join(sections).strip()
