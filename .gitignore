@@ -3,6 +3,9 @@
 !/.gitignore
 !/backend/
 !/frontend/
+# GitHub Actions CI 必须进入仓库（.github/workflows 是唯一识别位置），否则远程不会跑 CI、README 徽章也是死状态
+!/.github/
+!/.github/workflows/
 
 # ===== 机密配置文件 =====
 .env
