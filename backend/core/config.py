@@ -79,6 +79,20 @@ PROFILE_MAX_CHARS = int(os.getenv("PROFILE_MAX_CHARS", "5000"))
 # 意图分类器：开=规则+便宜模型三级漏斗，off=回滚到 prompt-only 老路
 INTENT_CLASSIFIER_ENABLED = os.getenv("INTENT_CLASSIFIER_ENABLED", "on").strip().lower() != "off"
 
+# ===== 计费（商业化阶段 1，《计费与商业化方案.md》）=====
+# off=完全不接入 billing；track=记帐（预占+结算流水）但积分不足不拒绝（试验盘数据用）；
+# enforce=积分不足在上游调用前拒绝（不按负不留坏账）。默认 off 保证测试/开发环境稳定。
+BILLING_MODE = os.getenv("BILLING_MODE", "off").strip().lower()
+# 管理员测试发放开关（false 时 /billing/test-grant 403）；发放总额与周期用 env 统一调
+BILLING_TEST_GRANTS_ENABLED = os.getenv("BILLING_TEST_GRANTS_ENABLED", "off").strip().lower() == "on"
+BILLING_TEST_GRANT_CREDITS = os.getenv("BILLING_TEST_GRANT_CREDITS", "100").strip()
+BILLING_TEST_GRANT_PERIOD_DAYS = int(os.getenv("BILLING_TEST_GRANT_PERIOD_DAYS", "30"))
+# 各能力调用前的默认预占估值（积分）。多预占部分在结算后退返，保证硬约束“不出现负余额”。
+BILLING_LYRICS_RESERVE_CREDITS = os.getenv("BILLING_LYRICS_RESERVE_CREDITS", "3").strip()
+BILLING_IMAGE_RESERVE_CREDITS = os.getenv("BILLING_IMAGE_RESERVE_CREDITS", "2").strip()
+# 预占超过这个秒数未被结算/释放视为提交方崩溃，由 sweep 恢复原占用额度
+BILLING_RESERVATION_STALE_SECONDS = int(os.getenv("BILLING_RESERVATION_STALE_SECONDS", "600"))
+
 # ===== 工具执行超时（秒）：超过即中断并回给模型一条明确的超时结果 =====
 TOOL_TIMEOUT_SECONDS = int(os.getenv("TOOL_TIMEOUT_SECONDS", "120"))
 

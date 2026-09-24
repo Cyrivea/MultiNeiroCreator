@@ -351,6 +351,141 @@ def _m012_create_assets(conn: sqlite3.Connection) -> None:
     )
 
 
+def _m013_create_billing(conn: sqlite3.Connection) -> None:
+    """商业化阶段 1：订阅 entitlement、价格版本与额度账本地基。
+
+    设计约束（来自《计费与商业化方案.md》§4/§6/§7）：
+    - 金额与积分全程定点数：价格以十进制字符串存储（Decimal 无损解析），
+      账户/流水以 micro-积分整数存储（1 积分 = 1_000_000 micro），二进制浮点不进库；
+    - 历史账单必须引用调用发生时的价格版本：usage_events 三列在此补齐；
+    - credit_ledger 不可变：UPDATE/DELETE 触发器直接拒绝，余额只能从流水重建/解释；
+    - 原子预占需要的账户行带 CHECK 非负约束，配合 BEGIN IMMEDIATE 串行写保证不透支。
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS model_price_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model_id TEXT NOT NULL,
+            -- 积分/千 token，十进制字符串（Python Decimal 可无损解析）；不用 REAL
+            input_price_per_1k TEXT NOT NULL,
+            output_price_per_1k TEXT NOT NULL,
+            cache_price_per_1k TEXT NOT NULL DEFAULT '0',
+            reasoning_price_per_1k TEXT NOT NULL DEFAULT '0',
+            -- 无 token 概念的能力（图像/音频/视频）固定每次调用价，积分/次
+            per_call_credits TEXT NOT NULL DEFAULT '0',
+            credit_multiplier TEXT NOT NULL DEFAULT '1',
+            effective_from TEXT NOT NULL,
+            effective_to TEXT,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_price_versions_model "
+        "ON model_price_versions(model_id, effective_from)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            plan TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('active', 'expired', 'cancelled', 'past_due')),
+            period_start TEXT NOT NULL,
+            period_end TEXT NOT NULL,
+            included_credits_micro INTEGER NOT NULL CHECK (included_credits_micro >= 0),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_subscriptions_user "
+        "ON subscriptions(user_id, status, period_end)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS credit_accounts (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            -- 两个桶分源记录（套餐额度 / 预付余额），各自分可用与已预占
+            plan_available_micro INTEGER NOT NULL DEFAULT 0 CHECK (plan_available_micro >= 0),
+            plan_reserved_micro INTEGER NOT NULL DEFAULT 0 CHECK (plan_reserved_micro >= 0),
+            prepaid_available_micro INTEGER NOT NULL DEFAULT 0 CHECK (prepaid_available_micro >= 0),
+            prepaid_reserved_micro INTEGER NOT NULL DEFAULT 0 CHECK (prepaid_reserved_micro >= 0),
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS credit_reservations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            reference_id TEXT NOT NULL UNIQUE,  -- 幂等键：调用方生成
+            plan_micro INTEGER NOT NULL CHECK (plan_micro >= 0),
+            prepaid_micro INTEGER NOT NULL CHECK (prepaid_micro >= 0),
+            status TEXT NOT NULL CHECK (status IN ('open', 'settled', 'released')),
+            created_at TEXT NOT NULL,
+            closed_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_credit_reservations_user "
+        "ON credit_reservations(user_id, status)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS credit_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            amount_micro INTEGER NOT NULL,  -- 正=进账/退回，负=扣减/预占
+            plan_balance_after_micro INTEGER NOT NULL,
+            prepaid_balance_after_micro INTEGER NOT NULL,
+            type TEXT NOT NULL CHECK (type IN (
+                'subscription_grant', 'usage_reserve', 'usage_settlement', 'usage_release',
+                'top_up', 'refund', 'expiration', 'manual_adjustment'
+            )),
+            reference_id TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_ledger_type_ref "
+        "ON credit_ledger(type, reference_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_credit_ledger_user "
+        "ON credit_ledger(user_id, created_at)"
+    )
+    # 流水只能追加，不能改写/删除——余额变化永远可解释
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS ledger_no_update BEFORE UPDATE ON credit_ledger
+        BEGIN SELECT RAISE(ABORT, 'credit_ledger 是不可变流水，禁止 UPDATE'); END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS ledger_no_delete BEFORE DELETE ON credit_ledger
+        BEGIN SELECT RAISE(ABORT, 'credit_ledger 是不可变流水，禁止 DELETE'); END
+        """
+    )
+    # usage_events 补价格快照与记费结果列（历史账引用调用时的价格版本）
+    usage_columns = {row[1] for row in conn.execute("PRAGMA table_info(usage_events)").fetchall()}
+    if "price_version_id" not in usage_columns:
+        conn.execute(
+            "ALTER TABLE usage_events ADD COLUMN price_version_id INTEGER "
+            "REFERENCES model_price_versions(id) ON DELETE SET NULL"
+        )
+    if "billed_credits_micro" not in usage_columns:
+        conn.execute("ALTER TABLE usage_events ADD COLUMN billed_credits_micro INTEGER")
+    if "provider_cost_micro" not in usage_columns:
+        conn.execute("ALTER TABLE usage_events ADD COLUMN provider_cost_micro INTEGER")
+
+
 def _m010_add_message_interrupted(conn: sqlite3.Connection) -> None:
     """SSE 断连截断标记：消息可能只生成了一半（客户端断开/上游中断），
     落库时必须带标，否则用户重进看到的是一条莫名的话。"""
@@ -372,6 +507,7 @@ MIGRATIONS: list[Migration] = [
     ("add message interrupted flag", _m010_add_message_interrupted),
     ("add run env snapshot", _m011_add_run_env_snapshot),
     ("create assets ledger", _m012_create_assets),
+    ("create billing core (prices/subscriptions/credits)", _m013_create_billing),
 ]
 
 

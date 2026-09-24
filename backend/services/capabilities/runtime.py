@@ -11,15 +11,19 @@ import contextlib
 import contextvars
 import logging
 import time
+import uuid
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from core import config
 from repositories import usage_repo
 from schemas.capability import CapabilityResult
+from services import billing_service
 from services.capabilities.zhipu_text import ModelNotConfiguredError
 
 logger = logging.getLogger("capabilities")
@@ -40,6 +44,9 @@ class CapabilityEntry:
     display_name: str
     input_model: type[BaseModel]
     executor: Callable[[BaseModel], Any]
+    # 懒读 config：测试里 monkeypatch 环境变量也生效
+    billing_model: Callable[[], str] = lambda: ""
+    billing_estimate: Callable[[], Decimal] = field(default=lambda: Decimal("0"))
 
 
 _capability_context: contextvars.ContextVar[CapabilityContext | None] = contextvars.ContextVar(
@@ -70,12 +77,12 @@ async def _record_usage(
     error: str | None,
     duration_ms: float,
     usage: dict | None = None,
-) -> None:
+) -> int | None:
     """把一次能力调用写入账本。账本落库失败不能阻塞生成主链路。"""
     if context.user_id is None:
-        return
+        return None
     try:
-        await asyncio.to_thread(
+        event = await asyncio.to_thread(
             usage_repo.insert,
             context.user_id,
             context.project_id,
@@ -90,11 +97,57 @@ async def _record_usage(
             duration_ms,
             datetime.now(UTC).isoformat(),
         )
+        return int(event["id"])
     except Exception as exc:
         logger.warning(
-            "用量记录写不进入处: %s",
+            "用量记录写不进入处： %s",
             type(exc).__name__,
             extra={"evt": "usage_record_failed", "capability": capability_id},
+        )
+        return None
+
+
+async def _release_reservation(reservation_ref: str | None, reason: str) -> None:
+    """失败/不可用路径：整笔退回预占。出错只能记日志，不能抛上去打断主链路。"""
+    if reservation_ref is None:
+        return
+    try:
+        await asyncio.to_thread(billing_service.release, reservation_ref, reason)
+    except Exception as exc:
+        logger.warning(
+            "计费预占退回失败（额度会在 sweep 中回收）：%s: %s",
+            type(exc).__name__,
+            exc,
+            extra={"evt": "billing_release_failed", "reference_id": reservation_ref},
+        )
+
+
+async def _settle_reservation(
+    reservation_ref: str | None,
+    capability_id: str,
+    entry: CapabilityEntry,
+    *,
+    usage: dict | None,
+    usage_event_id: int | None,
+) -> None:
+    """成功路径：按真实 token（文本）/固定每次调用价（图像）结算，差额自动退/补。"""
+    if reservation_ref is None:
+        return
+    try:
+        await asyncio.to_thread(
+            billing_service.settle,
+            reservation_ref,
+            (usage or {}).get("model") or entry.billing_model(),
+            int((usage or {}).get("prompt_tokens", 0)),
+            int((usage or {}).get("completion_tokens", 0)),
+            usage_event_id=usage_event_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "计费结算失败（额度会留在预占状态，由 sweep 回收）：%s: %s",
+            type(exc).__name__,
+            exc,
+            extra={"evt": "billing_settle_failed", "capability": capability_id, "reference_id": reservation_ref},
         )
 
 
@@ -125,12 +178,16 @@ def _register() -> dict[str, CapabilityEntry]:
             display_name="歌词",
             input_model=LyricsGenerateInput,
             executor=_lyrics_executor,
+            billing_model=lambda: config.LYRICS_MODEL,
+            billing_estimate=lambda: Decimal(config.BILLING_LYRICS_RESERVE_CREDITS),
         ),
         "image.generate": CapabilityEntry(
             capability_id="image.generate",
             display_name="图像",
             input_model=ImageGenerateInput,
             executor=_image_executor,
+            billing_model=lambda: config.IMAGE_MODEL,
+            billing_estimate=lambda: Decimal(config.BILLING_IMAGE_RESERVE_CREDITS),
         ),
     }
 
@@ -194,10 +251,63 @@ async def run_capability(
             "project_id": context.project_id,
         },
     )
+    # 计费钩子：reserve → 执行 → settle / release。任何时候计费代码出错都不许拖垮主链路，
+    # 只在 enforce 模式下【积分不足 / 价格未配置】才拒绝执行（在接触上游 Provider 之前）。
+    billing_mode = config.BILLING_MODE
+    reservation_ref: str | None = None
+    if billing_mode in ("track", "enforce"):
+        reservation_ref = f"cap:{capability_id}:{context.user_id}:{uuid.uuid4().hex}"
+        try:
+            await asyncio.to_thread(
+                billing_service.reserve,
+                context.user_id,
+                reservation_ref,
+                entry.billing_estimate(),
+            )
+        except billing_service.InsufficientCreditsError as exc:
+            if billing_mode == "enforce":
+                logger.warning(
+                    "计费拒绝：积分不足",
+                    extra={"evt": "billing_rejected", "capability": capability_id, "user_id": context.user_id},
+                )
+                return CapabilityResult(
+                    capability_id=capability_id,
+                    status="failed",
+                    error=f"积分不足，无法执行{entry.display_name}任务，请充值或升级套餐",
+                )
+            reservation_ref = None  # track 模式：欠费也不拦，但不记录关联数据
+            logger.warning(
+                "计费记帐跳过（track 模式欠费）：%s",
+                exc,
+                extra={"evt": "billing_track_skipped", "capability": capability_id, "user_id": context.user_id},
+            )
+        except billing_service.PriceNotConfiguredError as exc:
+            if billing_mode == "enforce":
+                return CapabilityResult(
+                    capability_id=capability_id,
+                    status="model_unavailable",
+                    error=f"{entry.display_name}模型的计费尚未配置，请稍后再试",
+                )
+            reservation_ref = None
+            logger.warning(
+                "计费记帐跳过（track 模式无价版）：%s",
+                exc,
+                extra={"evt": "billing_track_skipped", "capability": capability_id, "user_id": context.user_id},
+            )
+        except Exception as exc:
+            reservation_ref = None
+            logger.warning(
+                "计费预占失败，不阻塞主链路：%s: %s",
+                type(exc).__name__,
+                exc,
+                extra={"evt": "billing_reserve_failed", "capability": capability_id, "user_id": context.user_id},
+            )
+
     started_at = time.perf_counter()
     try:
         output = await asyncio.to_thread(entry.executor, validated)
     except ModelNotConfiguredError:
+        await _release_reservation(reservation_ref, "模型尚未配置")
         await _record_usage(
             capability_id,
             context,
@@ -220,6 +330,7 @@ async def run_capability(
             error=f"{entry.display_name}模型尚未配置，请稍后再试",
         )
     except Exception as exc:
+        await _release_reservation(reservation_ref, f"执行异常：{type(exc).__name__}")
         await _record_usage(
             capability_id,
             context,
@@ -246,7 +357,7 @@ async def run_capability(
     duration_ms = (time.perf_counter() - started_at) * 1000
     usage = output.get("usage") if isinstance(output, dict) else None
     content = output.get("content", "") if isinstance(output, dict) else output
-    await _record_usage(
+    usage_event_id = await _record_usage(
         capability_id,
         context,
         model=usage.get("model") if usage else None,
@@ -254,6 +365,13 @@ async def run_capability(
         error=None,
         duration_ms=duration_ms,
         usage=usage,
+    )
+    await _settle_reservation(
+        reservation_ref,
+        capability_id,
+        entry,
+        usage=usage,
+        usage_event_id=usage_event_id,
     )
 
     # 用电资产登记账本：任何 capability 返回的 "asset" 字典会插入 assets 表

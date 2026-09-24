@@ -13,6 +13,7 @@ from core.request_context import RequestContextMiddleware
 from routers.assets import router as assets_router
 from routers.assistant import router as assistant_router
 from routers.auth import router as auth_router
+from routers.billing import router as billing_router
 from routers.capabilities import router as capabilities_router
 from routers.jobs import router as jobs_router
 from routers.projects import router as projects_router
@@ -47,6 +48,7 @@ app.include_router(auth_router)
 app.include_router(assets_router)
 app.include_router(assistant_router)
 app.include_router(capabilities_router)
+app.include_router(billing_router)
 app.include_router(projects_router)
 app.include_router(jobs_router)
 app.include_router(workflows_router)

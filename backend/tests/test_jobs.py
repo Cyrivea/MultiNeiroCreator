@@ -39,7 +39,7 @@ def create_test_job(user_id: int, **kwargs):
 def test_migration_creates_jobs_and_is_idempotent(job_db):
     migrations.run_migrations()
     with database.db_connection() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 12
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 13
         columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)")}
     assert {"status", "payload_json", "lease_expires_at", "cancel_requested"} <= columns
     with database.db_connection() as conn:
