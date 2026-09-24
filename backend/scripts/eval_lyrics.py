@@ -81,8 +81,12 @@ def evaluate_mechanical(output: str) -> tuple[dict, float]:
 
 
 def generate_outputs(theme: str, with_params: bool) -> str:
-    """真实模式走 Provider；dry-run 返回带 group 记号的假文本。"""
-    return generate_lyrics_text(build_inputs(theme, with_params))
+    """真实模式走 Provider；dry-run 返回带 group 记号的假文本。
+
+    2026-09-24 适配：generate_lyrics_text 自 usage_events 账本改造（d76b53b）后
+    返回 {content, usage}，评测只取正文。
+    """
+    return generate_lyrics_text(build_inputs(theme, with_params))["content"]
 
 
 def generate_outputs_fake(theme: str, with_params: bool) -> str:

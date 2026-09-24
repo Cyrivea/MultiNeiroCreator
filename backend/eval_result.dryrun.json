@@ -1,0 +1,1398 @@
+{
+  "meta": {
+    "themes_count": 20,
+    "model": "glm-4-flash",
+    "timestamp": "2026-09-24T13:00:41.306480+00:00",
+    "dry_run": true
+  },
+  "mechanical": {
+    "baseline": {
+      "passed": 0,
+      "total": 20,
+      "rate": 0.0,
+      "failures": [
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "毕业 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "毕业"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "失恋 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "失恋"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "暗恋 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "暗恋"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "重逢 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "重逢"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "告别 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "告别"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "夏夜 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "夏夜"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "雨后的城市 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "雨后的城市"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "凌晨四点 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "凌晨四点"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "末班地铁 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "末班地铁"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "海边公路 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "海边公路"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "国风 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "国风"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "赛博朋克 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "赛博朋克"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "废墟之城 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "废墟之城"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "深海 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "深海"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "祭典 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "祭典"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "时间 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "时间"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "孤独 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "孤独"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "故乡 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "故乡"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "光 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "光"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "梦 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 ",
+          "theme": "梦"
+        }
+      ]
+    },
+    "tuned": {
+      "passed": 0,
+      "total": 20,
+      "rate": 0.0,
+      "failures": [
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "毕业 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "毕业"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "失恋 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "失恋"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "暗恋 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "暗恋"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "重逢 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "重逢"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "告别 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "告别"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "夏夜 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "夏夜"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "雨后的城市 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "雨后的城市"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "凌晨四点 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "凌晨四点"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "末班地铁 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "末班地铁"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "海边公路 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "海边公路"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "国风 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "国风"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "赛博朋克 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "赛博朋克"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "废墟之城 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "废墟之城"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "深海 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "深海"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "祭典 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "祭典"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "时间 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "时间"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "孤独 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "孤独"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "故乡 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "故乡"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "光 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "光"
+        },
+        {
+          "passed": false,
+          "failed_checks": [
+            "enough_lines"
+          ],
+          "line_count": 1,
+          "output": "梦 · 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 主歌 副歌 桥段 （强化意象版）",
+          "theme": "梦"
+        }
+      ]
+    }
+  },
+  "judge": {
+    "per_theme": [
+      {
+        "theme": "毕业",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "失恋",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "暗恋",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "重逢",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "告别",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "夏夜",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "雨后的城市",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "凌晨四点",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "末班地铁",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "海边公路",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "国风",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "赛博朋克",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "废墟之城",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "深海",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "A"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "A"
+            }
+          }
+        ],
+        "position_bias": true,
+        "final_verdict": "biased"
+      },
+      {
+        "theme": "祭典",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "时间",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "孤独",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "故乡",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "光",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      },
+      {
+        "theme": "梦",
+        "rounds": [
+          {
+            "position_mapping": {
+              "A": "tuned",
+              "B": "baseline"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "总体偏好": "平"
+            }
+          },
+          {
+            "position_mapping": {
+              "A": "baseline",
+              "B": "tuned"
+            },
+            "result": {
+              "A": {
+                "切题度": 6,
+                "意象与修辞": 6,
+                "情感递进": 6,
+                "韵脚节奏": 6
+              },
+              "B": {
+                "切题度": 7,
+                "意象与修辞": 7,
+                "情感递进": 7,
+                "韵脚节奏": 7
+              },
+              "总体偏好": "B"
+            }
+          }
+        ],
+        "position_bias": false,
+        "final_verdict": "weak_tuned"
+      }
+    ],
+    "summary": {
+      "total_themes": 20,
+      "position_bias_count": 1,
+      "position_bias_ratio": 0.05,
+      "preference": {
+        "baseline_wins": 0,
+        "tuned_wins": 0,
+        "ties": 0,
+        "weak_baseline": 0,
+        "weak_tuned": 19,
+        "biased": 1,
+        "inconclusive": 0,
+        "unknown": 0
+      },
+      "per_dimension_means": {
+        "baseline": {
+          "切题度": 6.0,
+          "意象与修辞": 6.0,
+          "情感递进": 6.0,
+          "韵脚节奏": 6.0
+        },
+        "tuned": {
+          "切题度": 6.5,
+          "意象与修辞": 6.5,
+          "情感递进": 6.5,
+          "韵脚节奏": 6.5
+        }
+      },
+      "scored_rounds": 38
+    }
+  }
+}

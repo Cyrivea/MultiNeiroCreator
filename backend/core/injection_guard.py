@@ -151,10 +151,13 @@ def scan_user_message(message: str) -> dict[str, Any]:
     if _HARMFUL_ACTIONS.search(message) and not _LEGIT_RESET.search(message):
         reasons.append("potential_harmful")
 
+    # 规则命中即实锤：正则匹配到“忽略你的所有规则”本身就是攻击证据，
+    # 不需要语义层再确认一遍才能 block（C20：旧版 medium 依赖语义层抬到 high，
+    # 分层节流后规则层必须自己能拍板）
     return {
         "is_suspicious": bool(reasons),
         "reasons": reasons,
-        "severity": "high" if "potential_harmful" in reasons else ("medium" if reasons else "low"),
+        "severity": "high" if reasons else "low",
     }
 
 
@@ -193,7 +196,12 @@ def scan_assistant_reply(reply: str) -> dict[str, Any]:
 
 
 def verdict(message: str = "", rag_text: str = "", reply: str = "") -> dict[str, Any]:
-    """一处统一入口：入/出/检索三路合并评估。"""
+    """一处统一入口：入/出/检索三路合并评估。
+
+    分层节流（C20 修复）：零成本的规则层先行，**只有规则全部放行时**
+    才烧一次 embedding 做语义兜底——旧版门控条件永真，每条消息都多付
+    一次 embedding API 调用。
+    """
     from core import config
 
     if not getattr(config, "INJECTION_GUARD_ENABLED", True):
@@ -203,31 +211,9 @@ def verdict(message: str = "", rag_text: str = "", reply: str = "") -> dict[str,
     vrag = scan_rag_context(rag_text) if rag_text else {}
     vout = scan_assistant_reply(reply) if reply else {}
 
-    findings: list[str] = []
-    severity = "low"
-
-    # 第二层：正则没挡住的换种说法/外文/乱序陈述 —— 走 embedding 语义指纹
-    #（只有第一轮全被排除了才启动，避免每次聊天都烧一次 embedding 调用）
-    if not findings and message.strip():
-        sem = scan_semantic_injection(message)
-        if sem.get("is_suspicious"):
-            findings.append("semantic_injection")
-            vin["reasons"] = ["semantic_injection"]
-            vin["is_suspicious"] = True
-            severity = "high"
-
-    if vrag.get("finds_injection"):
-        # RAG 注入是最典型的多材料攻击 - 中高优
-        findings.append("rag_injection")
-        severity = "medium"
-
-    if vout.get("leaked"):
-        # system prompt 泄漏要阻断
-        findings.append("prompt_leak")
-        severity = "high"
-
     # 破坏话术拧上合法“重启/重来”盾牌：用户主观直觉是“这个把我换了新开始”，
     # 不算注入攻击，允许用（比如音频预览者回滚刚才的草稿拖拽到画布才是好 UX）。
+    # 盾牌必须在规则结果折进 findings 之前套好。
     if (
         "potential_harmful" in (vin.get("reasons") or [])
         and _LEGIT_RESET.search(message or "")
@@ -235,14 +221,34 @@ def verdict(message: str = "", rag_text: str = "", reply: str = "") -> dict[str,
         vin["is_suspicious"] = False
         vin["severity"] = "low"
         vin["reasons"] = []
-    if vin.get("is_suspicious") and "semantic_injection" not in findings:
+
+    findings: list[str] = []
+    severity = "low"
+
+    # 第一层：正则规则（零成本），命中即实锤，直接免掉语义层调用
+    if vin.get("is_suspicious"):
         findings.extend(vin["reasons"])
         severity = vin["severity"]
+
+    # 第二层：正则没挡住的换种说法/外文/乱序陈述 —— 走 embedding 语义指纹
+    if not findings and message.strip():
+        sem = scan_semantic_injection(message)
+        if sem.get("skipped") == "embed_unavailable":
+            # fail-open 是有意决策（可用性优先），但降级必须留痕，不能盲飞
+            logger.warning(
+                "注入语义层降级：embedding 不可用，本次仅规则层生效",
+                extra={"evt": "injection_semantic_degraded"},
+            )
+        if sem.get("is_suspicious"):
+            findings.append("semantic_injection")
+            severity = "high"
+
     if vrag.get("finds_injection"):
         # RAG 注入是最典型的多材料攻击 - 中高优
         findings.append("rag_injection")
         if severity == "low":
             severity = "medium"
+
     if vout.get("leaked"):
         # system prompt 泄漏要阻断
         findings.append("prompt_leak")
