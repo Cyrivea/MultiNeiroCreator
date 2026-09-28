@@ -15,6 +15,45 @@ from services.rag import get_document_chunk_hits, search_with_metadata
 MAX_ATTACHMENT_CONTEXT_CHARS = 12000
 MAX_RETRIEVED_CONTEXT_CHARS = 6000
 
+# ---------- G3：token 预算截断 ----------
+
+
+def estimate_tokens(text: str) -> int:
+    """无分词器的保守估算：CJK 字符 ≈ 1 token/字，其余 ≈ 4 字符/token。
+
+    宁可高估不可低估——截断是成本/崩溃防护，高估只多剪几句旧对话，
+    低估会超上下文窗口直接报错。
+    """
+    if not text:
+        return 0
+    cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff" or "\u3000" <= ch <= "\u303f")
+    other = len(text) - cjk
+    return cjk + (other + 3) // 4
+
+
+HISTORY_OMITTED_NOTE = "（因长度限制，更早的 {n} 条对话已省略，以下仅为最近对话）"
+
+
+def truncate_history_by_tokens(history: list[dict], budget_tokens: int) -> tuple[list[dict], int]:
+    """从新到旧累计 token，超预算即丢弃更早条目；返回（保留历史, 被丢条数）。
+
+    最新一条永远保留（即使单条就超预算）：宁可贵一次，不能把刚发生的
+    上下文全剪成失忆。clean_history（前端展示/落库）不受影响，只剪给模型看的部分。
+    """
+    if not history:
+        return [], 0
+    kept: list[dict] = []
+    used = 0
+    for item in reversed(history):
+        cost = estimate_tokens(str(item.get("content", "")))
+        if kept and used + cost > budget_tokens:
+            break
+        kept.append(item)
+        used += cost
+    kept.reverse()
+    return kept, len(history) - len(kept)
+
+
 logger = logging.getLogger("assistant")
 
 
@@ -275,7 +314,24 @@ async def build_chat_context(
         context = (context or "") + latest
     system_prompt = build_system_prompt(profile, context)
     history = full_history[-config.CHAT_HISTORY_MAX_ITEMS :]
-    messages, clean_history = assemble_messages(system_prompt, history, message, attachments)
+    # G3：条数截断只防疯子，token 截断才防破产——预算内从新到旧保留，
+    # 被剪时给模型留一句省略声明，避免它把“没看到”当成“没发生过”
+    budget = config.CHAT_HISTORY_TOKEN_BUDGET
+    truncated_history, dropped = truncate_history_by_tokens(history, budget)
+    if dropped:
+        logger.info(
+            "历史按 token 预算截断",
+            extra={
+                "evt": "history_token_truncated",
+                "dropped": dropped,
+                "kept": len(truncated_history),
+                "budget_tokens": budget,
+            },
+        )
+        system_prompt = system_prompt + "\n\n" + HISTORY_OMITTED_NOTE.format(n=dropped)
+    messages, _ = assemble_messages(system_prompt, truncated_history, message, attachments)
+    # clean_history（前端展示/落库口径）用完整历史，不随模型侧截断缩水
+    _, clean_history = assemble_messages(system_prompt, history, message, attachments)
     persist_text = message if (message or "").strip() else "已发送附件"
     clean_history[-1]["content"] = persist_text
 

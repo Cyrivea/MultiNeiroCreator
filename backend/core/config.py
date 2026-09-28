@@ -73,6 +73,9 @@ BODY_MAX_MB = int(os.getenv("BODY_MAX_MB", "32"))
 # 字段级上限（业务层）：1MB 的 body 过得了全局限制，但作为单条消息仍不合理
 CHAT_MESSAGE_MAX_CHARS = int(os.getenv("CHAT_MESSAGE_MAX_CHARS", "20000"))
 CHAT_HISTORY_MAX_ITEMS = int(os.getenv("CHAT_HISTORY_MAX_ITEMS", "200"))
+# G3：发给模型的历史对话 token 预算（不含 system prompt 与当前消息）。
+# 保守估算口径见 context_builder.estimate_tokens；超出则从最旧开始丢弃。
+CHAT_HISTORY_TOKEN_BUDGET = int(os.getenv("CHAT_HISTORY_TOKEN_BUDGET", "6000"))
 CHAT_ATTACHMENTS_MAX_ITEMS = int(os.getenv("CHAT_ATTACHMENTS_MAX_ITEMS", "20"))
 PROFILE_MAX_CHARS = int(os.getenv("PROFILE_MAX_CHARS", "5000"))
 
