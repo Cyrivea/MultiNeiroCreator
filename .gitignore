@@ -1,6 +1,7 @@
 # ===== 仓库边界：只提交前后端源码目录和本文件 =====
 /*
 !/.gitignore
+!/README.md
 !/backend/
 !/frontend/
 # GitHub Actions CI 必须进入仓库（.github/workflows 是唯一识别位置），否则远程不会跑 CI、README 徽章也是死状态
