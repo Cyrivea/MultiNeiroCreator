@@ -12,6 +12,30 @@
 
 Neyria 是一个**平台托管模型的 AI 创作工作台**：注册用户开箱即得流式对话助手、项目级 RAG 文档问答、可直接使用的生产工具 Block，以及一份用户与 AI 共同编辑的可执行 Workflow——全程不接触 API Key、上游模型名或系统提示词，模型与密钥只在后端托管。
 
+## 界面一览
+
+<p align="center">
+  <img src="./assets/readme/showcase-workflow.png" width="100%"
+       alt="工作台区域：Workflow 画布，多个工具 Block 并联连接，支持节点拖拽、连线编辑和小地图导航">
+</p>
+
+**工作台 · Workflow 画布**：工具 Block 并联编排，节点可拖拽、连线可编辑，运行期间画布自动加锁防止编辑冲突。
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="./assets/readme/showcase-blocks.png" width="100%"
+           alt="左侧工具库：浏览并一键添加已有的创作 Block 到画布">
+      <p align="center"><sub>工具库：一键添加已有创作 Block</sub></p>
+    </td>
+    <td width="50%">
+      <img src="./assets/readme/showcase-assistant.png" width="100%"
+           alt="AI 助手模块：流式对话，助手可调用工具并汇报执行进度">
+      <p align="center"><sub>Chat Assistant：流式对话 + 工具调用</sub></p>
+    </td>
+  </tr>
+</table>
+
 ## 先看证据
 
 | 维度 | 现状 |
