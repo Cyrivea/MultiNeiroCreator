@@ -1,39 +1,46 @@
-# Neyria
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%"
+       alt="Neyria：平台托管模型的 AI 创作工作台——流式对话、RAG 问答、可编辑 Workflow 与订阅计费，右侧为聊天助手经歌词 Block、图像 Block 到资产入库的链路图">
+</p>
 
-[![CI](https://github.com/Cyrivea/Neyria/actions/workflows/ci.yml/badge.svg)](https://github.com/Cyrivea/Neyria/actions/workflows/ci.yml)
+<p align="center">
+  <a href="https://github.com/Cyrivea/Neyria/actions/workflows/ci.yml"><img src="https://github.com/Cyrivea/Neyria/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Python_3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/Vue_3-4FC08D?logo=vuedotjs&logoColor=white" alt="Vue 3">
+</p>
 
-Neyria 创作工具工作台：注册登录 + 流式聊天助手 + RAG 文档问答 + 可控生产工具 Block + 可编辑 Workflow 规划。
+Neyria 是一个**平台托管模型的 AI 创作工作台**：注册用户开箱即得流式对话助手、项目级 RAG 文档问答、可直接使用的生产工具 Block，以及一份用户与 AI 共同编辑的可执行 Workflow——全程不接触 API Key、上游模型名或系统提示词，模型与密钥只在后端托管。
 
-产品边界：普通用户只使用平台提供的工具区块和 Workflow，不接触 API Key、Base URL、后端系统 Prompt、真实上游模型名或代码执行接口。聊天助手可以调用这些 Block，用户也可以直接使用 Block，AI 生成的 Workflow 与用户手动编辑的 Workflow 使用同一份可编辑图结构。
+## 先看证据
 
-> 完整的架构说明见 `architecture.md`；API/部署文档与量化指标仍在补充（见 `unsolved.md` H2/H3）。本 README 提供最小可复现指引。
+| 维度 | 现状 |
+| --- | --- |
+| 真实生产链 | `lyrics.generate → image.generate` 真机出图：SiliconFlow Kolors 生成 1344×768 PNG，落项目资产表，用量入账 |
+| 后端测试 | pytest 250 用例全绿（无密钥环境 230 passed + 1 skipped） |
+| 前端测试 | Vitest 46 用例 |
+| 意图评测 | 30/30（画布 vs 对话分流） |
+| 防注入评测 | 20/20（规则 + 语义双层守卫） |
+| 计费并发 | credit ledger 10 线程竞测 0 透支 0 重扣 |
+| CI | GitHub Actions 双 job：后端 ruff + mypy + pytest（Redis service 容器）；前端 ESLint + Prettier + Vitest + build |
 
-第一条真实生产能力已经接通：`lyrics.generate` 使用后端托管的智谱文本模型。用户可以在歌词 Block 参数面板中填写主题、平台预设曲风/情绪/语言并生成 Markdown 歌词；Chat Assistant 也可以调用同一个 Capability Runtime。图片、视频、音频仍是前端原型，等待各自 Provider。
+## 它怎么运作
 
+<p align="center">
+  <img src="./assets/readme/how-it-works.svg" width="100%"
+       alt="Neyria 架构分层图：Vue 3 工作台调用 FastAPI 后端；后端由 ReAct 编排器、Capability Runtime、注入防护与任务队列组成，向下依赖计费账本、存储与模型 Provider">
+</p>
 
-# 后续产品主线
+- **ReAct 编排器**（`backend/services/chat/`）：SSE 流式输出；按 index 聚合多 tool_calls，结果回填后模型可继续要工具，最多 5 轮；
+- **Capability Runtime**（`backend/services/capabilities/`）：生产工具的唯一实现处——Chat Assistant、用户直接使用、Workflow 节点共用同一运行时；歌词走智谱 GLM、图像走 SiliconFlow Kolors、检索 embedding 走 BGE-M3；
+- **注入防护**（`backend/core/injection_guard.py`）：规则层先行、语义层过 embedding 前先过门控；RAG 上下文 Spotlighting 打标，间接注入触发工具冻结；
+- **任务队列**（`backend/services/job_service.py`）：持久化 jobs/documents，Worker 原子领取 + 租约恢复，失败重试；
+- **计费账本**（`backend/services/billing_service.py`）：usage_events 记账 + 价格版本 + reserve/settle/release 预占结算 + CHECK 非负约束 + 幂等充值。
 
-项目不会先做一个只展示多 Agent 节点的画布，而是按下面顺序建设真正的生产闭环：
-
-```text
-平台托管模型和 Provider
-  → 生产工具 Block
-  → 订阅、额度和用量计量
-  → 聊天助手调用 Block
-  → 用户和 AI 共同编辑 Workflow
-  → 生成结果保存为项目资产
-```
-
-第一批 Block 优先支持歌词生成、内容审核、视觉 Prompt 和分镜等文本生产能力；图片、视频、音频 Block 通过独立 Provider 接入。平台内部的模型、接口密钥和系统 Prompt 只由管理员维护，前端不暴露这些实现细节。
-
-
-- **后端**：Python 3.12 / FastAPI / SQLite / Redis / ChromaDB，依赖管理 [uv](https://docs.astral.sh/uv/)
-- **前端**：Vue 3 / TypeScript / Vite / Pinia，包管理 pnpm
-
-## 快速启动（开发环境）
+## 快速启动
 
 ```bash
-# 后端（需要 backend/.env，至少包含 SECRET_KEY；聊天用 API_KEY，RAG 使用 SiliconFlow 的 SILICONFLOW_API_KEY）
+# 后端（需要 backend/.env，见下方变量说明）
 ./dev.sh                 # 自动检查/拉起 Redis + 启动 uvicorn --reload
 
 # 前端
@@ -42,26 +49,43 @@ pnpm install
 pnpm dev
 ```
 
+`backend/.env` 至少包含：
+
 ```env
-# 聊天与歌词 Block：智谱（歌词模型可由后端 LYRICS_MODEL 控制）
-API_KEY=...
-LYRICS_MODEL=glm-4-flash
-# RAG：硅基流动免费版 BAAI/bge-m3
-SILICONFLOW_API_KEY=...
-EMBEDDING_MODEL=BAAI/bge-m3
+SECRET_KEY=...          # JWT 签名密钥
+API_KEY=...             # 智谱（聊天与歌词）
+SILICONFLOW_API_KEY=... # RAG embedding 与图像
 ```
 
+可选覆盖：`CHAT_MODEL` / `LYRICS_MODEL`（默认 `glm-4-flash`）、`EMBEDDING_MODEL`（默认 `BAAI/bge-m3`）、`IMAGE_MODEL`（默认 `Kwai-Kolors/Kolors`）。
+
+## 质量门禁
 
 ```bash
-# 后端（backend/ 目录）
+# 后端（backend/ 目录，依赖管理 uv）
 uv sync --all-groups     # 安装含 dev 组的全部依赖
 uv run ruff check .      # lint
-uv run mypy              # 类型检查（core/schemas/services/rag）
-uv run pytest            # 当前后端 133 passed, 10 skipped
+uv run mypy              # 类型检查
+uv run pytest            # 测试
 
 # 前端（frontend/ 目录）
 pnpm lint                # ESLint
 pnpm format:check        # Prettier
-pnpm test                # Vitest（当前 31 个用例）
+pnpm test                # Vitest
 pnpm build               # vue-tsc + vite
 ```
+
+## 产品边界
+
+- 普通用户不接触 API Key、Base URL、系统提示词或上游模型名；
+- 视频、音频 Provider 暂未接入，不做完整多模态；
+- 不同时接入多个聊天模型供应商；BYOK 不做。
+
+## 路线图
+
+```text
+✅ 平台托管模型和 Provider → ✅ 生产工具 Block（歌词/图像）→ 🔨 订阅、额度和用量计量
+→ ✅ 聊天助手调用 Block → 🔨 用户与 AI 共同编辑 Workflow → 🔨 生成结果保存为项目资产
+```
+
+> 架构规划见 `architecture.md`（仓库外内部文档）；当前完成度与遗留问题清单见项目内 `unsolved.md`。
