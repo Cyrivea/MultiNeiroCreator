@@ -52,7 +52,7 @@
     <g id="node-asset">
       <rect x="952" y="264" width="190" height="58" rx="10" fill="#131318" stroke="#60A5FA" stroke-width="1.5"/>
       <text x="1047" y="289" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif"
-            font-size="20" font-weight="600" fill="#E8E8EC">资产入库</text>
+            font-size="20" font-weight="600" fill="#E8E8EC">出图产出</text>
       <text x="1047" y="310" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
             font-size="16" fill="#77777F">1344×768 PNG</text>
     </g>

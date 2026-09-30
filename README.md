@@ -40,7 +40,7 @@ Neyria 是一个**平台托管模型的 AI 创作工作台**：注册用户开�
 
 | 维度 | 现状 |
 | --- | --- |
-| 真实生产链 | `lyrics.generate → image.generate` 真机出图：SiliconFlow Kolors 生成 1344×768 PNG，落项目资产表，用量入账 |
+| 真实生产链 | `lyrics.generate → image.generate` 真机 E2E 出图：SiliconFlow Kolors 生成 1344×768 PNG（含预签名 URL 转存本地），用量入 usage_events 账本 |
 | 后端测试 | pytest 250 用例全绿（无密钥环境 230 passed + 1 skipped） |
 | 前端测试 | Vitest 46 用例 |
 | 意图评测 | 30/30（画布 vs 对话分流） |
