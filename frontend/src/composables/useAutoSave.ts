@@ -16,6 +16,7 @@ import {
   USER_CANCELLED_DIRECTORY_PICKER,
   type ProjectFileContent,
 } from '@/utils/localProject'
+import { markProjectSaved } from '@/serve/project'
 import { useProjectStore, type AutoSaveMode } from '@/stores/project'
 
 export interface SaveModeOption {
@@ -94,6 +95,12 @@ export function useAutoSave() {
     projectStore.setProjectPath(
       projectStore.projectPath || directoryHandle.name || '已选择项目文件夹',
     )
+
+    // B29：这是真实写盘的时刻——保存成立，向服务端打戳（面板准入）。
+    // fire-and-forget：打戳失败不中断保存，下次 tick 自然重试。
+    if (typeof projectStore.id === 'number' && projectStore.id > 0) {
+      void markProjectSaved(projectStore.id).catch(() => undefined)
+    }
 
     return nextMeta
   }

@@ -49,7 +49,7 @@ def _account(user_id: int) -> dict:
 
 def test_migration_creates_billing_tables(billing_db):
     with db_connection() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 13
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == len(migrations.MIGRATIONS)
         tables = {row[0] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'credit_%' OR name LIKE 'model_%' OR name LIKE 'subscriptions'"
         )}

@@ -231,7 +231,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from '@/utils/toast'
-import { getProject } from '@/serve/project'
+import { getProject, touchProjectOpened } from '@/serve/project'
 import { useLoadingStore } from '@/stores/loading'
 import { useUserStore } from '@/stores/user'
 import { normalizeSaveMode, useProjectStore, type RecentProjectItem } from '@/stores/project'
@@ -353,6 +353,11 @@ function applyOpenedProject(
     projectPath: project.projectPath,
     saveMode,
   })
+  // B29：真实打开时刻上报——刷新 last_opened_at（修「面板按创建时间排」旧 bug），
+  // 被放弃但保存过的工程在此复活。fire-and-forget：失败不影响打开体验。
+  if (typeof project.id === 'number' && project.id > 0) {
+    void touchProjectOpened(project.id).catch(() => undefined)
+  }
   void navigateToProject(projectStore.id)
 }
 
@@ -387,6 +392,21 @@ async function handleOpenProjectPicker() {
   try {
     const directoryHandle = await requestProjectDirectoryHandle()
     const project = await readProjectDirectory(directoryHandle)
+
+    // B29：磁盘捡回的工程先过服务端校验——被「不保存」放弃且从未保存过的 → 提示失效（用户拍板：没保存的就不要了）；
+    // 保存过的（含被放弃）→ getProject 正常返回，面板复活由 applyOpenedProject 的 touch 完成
+    if (typeof project.id === 'number' && project.id > 0) {
+      try {
+        await getProject(project.id)
+      } catch {
+        openProjectWarning(
+          '项目已失效',
+          '该项目从未保存过，已被放弃。磁盘文件保留作备份，但无法重新打开。',
+        )
+        return
+      }
+    }
+
     applyOpenedProject(project, directoryHandle)
     ElMessage.success(`已打开项目：${project.name}`)
   } catch (error) {
@@ -551,10 +571,22 @@ function handleJobTerminal() {
   void assistantPanelRef.value?.loadHistory()
 }
 
+/** B29：防手滑——手动保存模式下关闭/刷新页面时，浏览器原生警示「当前操作不会被保存」。
+ * 说明：会话与 Workflow 草稿在服务端持久化，此处保护的是本地工程元数据（名称等）
+ * 与用户心理预期；自动保存模式下由定时 tick 兑现保存，不弹。 */
+function handleBeforeUnload(event: BeforeUnloadEvent) {
+  const projectOpen = projectStore.id !== null || !!projectStore.projectPath
+  if (projectOpen && projectStore.saveMode === 'manual') {
+    event.preventDefault()
+    event.returnValue = ''
+  }
+}
+
 onMounted(() => {
   taskStore.startPolling(projectId)
   document.addEventListener('click', handleDocumentClick)
   window.addEventListener(JOB_TERMINAL_EVENT, handleJobTerminal)
+  window.addEventListener('beforeunload', handleBeforeUnload)
   void initializeWorkspaceFromEntryPoint()
 })
 
@@ -562,6 +594,7 @@ onBeforeUnmount(() => {
   taskStore.stopPolling()
   document.removeEventListener('click', handleDocumentClick)
   window.removeEventListener(JOB_TERMINAL_EVENT, handleJobTerminal)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
 })
 </script>
 

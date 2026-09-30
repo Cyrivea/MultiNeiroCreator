@@ -121,10 +121,11 @@
 // 完成后通过 created 事件把新项目快照交给布局层导航。
 import { ref, watch } from 'vue'
 import { ElMessage } from '@/utils/toast'
-import { createProject, type ProjectPayload } from '@/serve/project'
+import { createProject, discardProject, getProject, markProjectSaved, type ProjectPayload } from '@/serve/project'
 import { getCurrentTimestampParts } from '@/utils/datetime'
 import {
   PROJECT_SUBDIRS,
+  buildAutoSaveProjectName,
   requestProjectDirectoryHandle,
   writeLocalJsonFile,
   USER_CANCELLED_DIRECTORY_PICKER,
@@ -185,16 +186,39 @@ function goToStepTwo() {
   step.value = 2
 }
 
-/** 旧工程还没有保存位置时，先让用户为它选一个本地文件夹 */
+/** 旧工程还没有保存位置时，先让用户为它选一个本地文件夹；已有则直接重写 */
 async function ensureCurrentProjectSaved() {
-  if (projectStore.projectPath) {
-    return
+  let handle = projectStore.directoryHandle
+  if (!handle) {
+    handle = await requestProjectDirectoryHandle()
+    projectStore.setDirectoryHandle(handle)
+  }
+  projectStore.setProjectPath(projectStore.projectPath || handle?.name || '已选择文件夹')
+
+  // B29：「保存」从此是真实写盘——不再只登记目录句柄；元数据落盘 + 服务端打保存戳
+  const now = getCurrentTimestampParts()
+  const currentName = projectStore.name
+  const projectMeta: ProjectFileContent = {
+    name:
+      currentName && currentName !== '当前未命名工程'
+        ? currentName
+        : buildAutoSaveProjectName(),
+    created_at: now.display,
+    updated_at: now.display,
+    save_mode: projectStore.saveMode,
+    version: '0.1.0',
+    ...(typeof projectStore.id === 'number' && projectStore.id > 0
+      ? { id: projectStore.id }
+      : {}),
+  }
+  await writeLocalJsonFile(handle, 'project.json', projectMeta)
+
+  // 已登记过服务端的工程：补上保存戳（面板准入）
+  if (typeof projectStore.id === 'number' && projectStore.id > 0) {
+    void markProjectSaved(projectStore.id).catch(() => undefined)
   }
 
-  const handle = await requestProjectDirectoryHandle()
-  projectStore.setDirectoryHandle(handle)
-  projectStore.setProjectPath(handle?.name || '已选择文件夹')
-  ElMessage.success('已选择当前工程保存位置')
+  ElMessage.success('已保存当前工程')
 }
 
 async function createNamedProject() {
@@ -255,6 +279,19 @@ async function discardAndCreate() {
   if (isCreating.value) return
   isCreating.value = true
   try {
+    // B29：「不保存」分流——保存过的工程丢弃未保存修改即可（面板保留）；
+    // 从未保存过的工程从面板软删除（磁盘文件不动，天然备份，可从「选择项目打开」捡回）。
+    const currentId = projectStore.id
+    if (typeof currentId === 'number' && currentId > 0) {
+      try {
+        const { project } = await getProject(currentId)
+        if (!project.saved_at) {
+          await discardProject(currentId)
+        }
+      } catch {
+        // 查询失败不阻断新建流程；面板状态以服务端为准，下次打开面板自然纠偏
+      }
+    }
     await createNamedProject()
   } catch (error) {
     if (error instanceof Error && error.message !== USER_CANCELLED_DIRECTORY_PICKER) {

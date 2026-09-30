@@ -494,6 +494,21 @@ def _m010_add_message_interrupted(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE messages ADD COLUMN interrupted INTEGER NOT NULL DEFAULT 0")
 
 
+def _m014_project_panel_semantics(conn: sqlite3.Connection) -> None:
+    """B29「最近打开」面板语义：登记 ≠ 保存。
+
+    - saved_at：首次真实保存（自动保存写盘/用户显式保存）的时刻，面板只显示已保存项目；
+    - discarded_at：用户「不保存」放弃未保存过的工程的时刻，面板隐藏但行不删（外键链不断）；
+    - 存量回填：旧项目按旧语义一律视作已保存，面板行为不回退。
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(projects)")}
+    if "saved_at" not in columns:
+        conn.execute("ALTER TABLE projects ADD COLUMN saved_at TEXT")
+    if "discarded_at" not in columns:
+        conn.execute("ALTER TABLE projects ADD COLUMN discarded_at TEXT")
+    conn.execute("UPDATE projects SET saved_at = COALESCE(saved_at, updated_at)")
+
+
 MIGRATIONS: list[Migration] = [
     ("baseline: users/messages/projects + indexes", _m001_baseline),
     ("add foreign keys via table rebuild", _m002_add_foreign_keys),
@@ -508,6 +523,7 @@ MIGRATIONS: list[Migration] = [
     ("add run env snapshot", _m011_add_run_env_snapshot),
     ("create assets ledger", _m012_create_assets),
     ("create billing core (prices/subscriptions/credits)", _m013_create_billing),
+    ("project panel semantics: saved_at + discarded_at", _m014_project_panel_semantics),
 ]
 
 

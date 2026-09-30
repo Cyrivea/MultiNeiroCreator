@@ -12,6 +12,38 @@ def list_recent_projects(user_id: int, limit: int = 8) -> list[Project]:
     return [Project(**dict(row)) for row in project_repo.list_recent(user_id, limit)]
 
 
+def _now_timestamp() -> str:
+    # 先取带时区的 UTC 再转本地，避免 naive datetime
+    return datetime.now(UTC).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def mark_project_saved(user_id: int, project_id: int) -> Project | None:
+    """首次真实保存（自动保存写盘/用户显式保存）：面板准入打戳。"""
+    row = project_repo.get_by_id(user_id, project_id)
+    if row is None:
+        return None
+    project_repo.mark_saved(user_id, project_id, _now_timestamp())
+    return get_project(user_id, project_id)
+
+
+def discard_project(user_id: int, project_id: int) -> Project | None:
+    """用户选「不保存」放弃从未保存过的工程：面板隐藏，磁盘文件不动（天然备份）。"""
+    row = project_repo.get_by_id(user_id, project_id)
+    if row is None:
+        return None
+    project_repo.discard(user_id, project_id, _now_timestamp())
+    return get_project(user_id, project_id)
+
+
+def touch_project_opened(user_id: int, project_id: int) -> Project | None:
+    """真实打开：刷新 last_opened_at（修「面板按创建时间排」的旧 bug）+ 从放弃状态复活。"""
+    row = project_repo.get_by_id(user_id, project_id)
+    if row is None:
+        return None
+    project_repo.touch(user_id, project_id, _now_timestamp())
+    return get_project(user_id, project_id)
+
+
 def get_project(user_id: int, project_id: int) -> Project | None:
     row = project_repo.get_by_id(user_id, project_id)
     return Project(**dict(row)) if row else None

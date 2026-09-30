@@ -15,6 +15,10 @@ class Project(BaseModel):
     created_at: str
     updated_at: str
     last_opened_at: str
+    # B29 面板语义：None = 从未真实保存过；非 None = 最近一次写盘时刻
+    saved_at: str | None = None
+    # None = 在面板可见；非 None = 被「不保存」放弃，面板隐藏（磁盘文件保留作备份）
+    discarded_at: str | None = None
 
 
 class CreateProjectRequest(BaseModel):
