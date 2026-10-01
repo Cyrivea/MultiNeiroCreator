@@ -40,7 +40,7 @@ Neyria 是一个**平台托管模型的 AI 创作工作台**：注册用户开�
 
 | 维度 | 现状 |
 | --- | --- |
-| 真实生产链 | `lyrics.generate → image.generate` 真机 E2E 出图：SiliconFlow Kolors 生成 1344×768 PNG（含预签名 URL 转存本地），用量入 usage_events 账本 |
+| 真实生产链 | `lyrics.generate → image.generate` 真机 E2E 出图：SiliconFlow Kolors 生成 1344×768 PNG（含预签名 URL 转存本地），用量入 usage_events 账本；`video.generate`（Wan2.2-T2V）真机出片 3m29s，mp4 转存可流式回放 |
 | 后端测试 | pytest 250 用例全绿（无密钥环境 230 passed + 1 skipped） |
 | 前端测试 | Vitest 46 用例 |
 | 意图评测 | 30/30（画布 vs 对话分流） |
@@ -56,7 +56,7 @@ Neyria 是一个**平台托管模型的 AI 创作工作台**：注册用户开�
 </p>
 
 - **ReAct 编排器**（`backend/services/chat/`）：SSE 流式输出；按 index 聚合多 tool_calls，结果回填后模型可继续要工具，最多 5 轮；
-- **Capability Runtime**（`backend/services/capabilities/`）：生产工具的唯一实现处——Chat Assistant、用户直接使用、Workflow 节点共用同一运行时；歌词走智谱 GLM、图像走 SiliconFlow Kolors、检索 embedding 走 BGE-M3；
+- **Capability Runtime**（`backend/services/capabilities/`）：生产工具的唯一实现处——Chat Assistant、用户直接使用、Workflow 节点共用同一运行时；歌词走智谱 GLM、图像走 SiliconFlow Kolors、视频走 Wan2.2-T2V、检索 embedding 走 BGE-M3；
 - **注入防护**（`backend/core/injection_guard.py`）：规则层先行、语义层过 embedding 前先过门控；RAG 上下文 Spotlighting 打标，间接注入触发工具冻结；
 - **任务队列**（`backend/services/job_service.py`）：持久化 jobs/documents，Worker 原子领取 + 租约恢复，失败重试；
 - **计费账本**（`backend/services/billing_service.py`）：usage_events 记账 + 价格版本 + reserve/settle/release 预占结算 + CHECK 非负约束 + 幂等充值。
@@ -102,7 +102,7 @@ pnpm build               # vue-tsc + vite
 ## 产品边界
 
 - 普通用户不接触 API Key、Base URL、系统提示词或上游模型名；
-- 视频、音频 Provider 暂未接入，不做完整多模态；
+- 音频 Provider 暂未接入；视频（Wan2.2-T2V）已接入；
 - 不同时接入多个聊天模型供应商；BYOK 不做。
 
 ## 路线图
