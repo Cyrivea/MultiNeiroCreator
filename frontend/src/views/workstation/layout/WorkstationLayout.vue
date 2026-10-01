@@ -63,7 +63,17 @@
         <main class="main-grid" :class="{ 'assistant-collapsed': isAssistantCollapsed }">
           <aside class="left-column">
             <div class="icon-rail" aria-label="Side navigation">
-              <button class="icon-button active" title="Explorer" type="button">☰</button>
+              <button
+                class="icon-button"
+                :class="{ active: isBillingOpen }"
+                title="Billing"
+                type="button"
+                :aria-expanded="isBillingOpen"
+                aria-label="打开计费面板"
+                @click="isBillingOpen = !isBillingOpen"
+              >
+                ☰
+              </button>
               <div class="rail-spacer"></div>
               <button
                 class="icon-button"
@@ -173,6 +183,7 @@
     />
 
     <SettingsPanel :open="isSettingsOpen" @close="isSettingsOpen = false" />
+    <BillingPanel :open="isBillingOpen" @close="isBillingOpen = false" />
 
     <CreateProjectDialog
       :open="isCreateProjectModalOpen"
@@ -258,6 +269,7 @@ import CreativeToolPicker from '@/components/creative/CreativeToolPicker.vue'
 import CreativeToolPanel from '@/components/creative/CreativeToolPanel.vue'
 import WorkflowCanvas from '@/components/workflow/WorkflowCanvas.vue'
 import SettingsPanel from '@/components/settings/SettingsPanel.vue'
+import BillingPanel from '@/components/billing/BillingPanel.vue'
 import { JOB_TERMINAL_EVENT } from '@/utils/jobTransitions'
 import '@/views/workstation/styles/workstation-base.css'
 
@@ -283,6 +295,7 @@ const { id: projectId } = storeToRefs(projectStore)
 
 const isToolModalOpen = ref(false)
 const isSettingsOpen = ref(false)
+const isBillingOpen = ref(false)
 const isAssistantCollapsed = ref(false)
 const isSaveModeOpen = ref(false)
 const isSaveModeApplying = ref(false)

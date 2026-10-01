@@ -13,6 +13,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AssistantPanel: typeof import('./../components/assistant/AssistantPanel.vue')['default']
     AttachmentDock: typeof import('./../components/assistant/AttachmentDock.vue')['default']
+    BillingPanel: typeof import('./../components/billing/BillingPanel.vue')['default']
     ChatComposer: typeof import('./../components/assistant/ChatComposer.vue')['default']
     CreateProjectDialog: typeof import('./../components/project/CreateProjectDialog.vue')['default']
     CreativeToolPanel: typeof import('./../components/creative/CreativeToolPanel.vue')['default']
