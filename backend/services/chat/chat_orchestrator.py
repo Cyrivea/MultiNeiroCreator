@@ -32,7 +32,7 @@ from core.injection_guard import (
     guard_untrusted_content,
     scan_assistant_reply,
 )
-from repositories.chat_repo import append_message
+from repositories.chat_repo import append_message, pop_last_turn
 from services.capabilities import CapabilityContext, use_capability_context
 from services.chat.context_builder import build_chat_context
 from services.chat.intent_classifier import classify as classify_intent
@@ -238,6 +238,7 @@ async def stream_chat(
     message: str,
     project_id: int | None = None,
     attachments: list[dict] | None = None,
+    regenerate: bool = False,
 ) -> AsyncGenerator[str, None]:
     """对话流外层：兼做流中断兜底。
 
@@ -247,7 +248,7 @@ async def stream_chat(
     """
     started = time.perf_counter()
     try:
-        async for event in _orchestrate(user, message, project_id, attachments):
+        async for event in _orchestrate(user, message, project_id, attachments, regenerate):
             yield event
     except HTTPException:
         raise
@@ -269,9 +270,21 @@ async def _orchestrate(
     message: str,
     project_id: int | None = None,
     attachments: list[dict] | None = None,
+    regenerate: bool = False,
 ) -> AsyncGenerator[str, None]:
     if client is None:
         raise HTTPException(status_code=503, detail="未配置 API_KEY，聊天功能暂不可用")
+
+    # 重生成模式（UI1）：先在事务语义下截掉数据库尾轮（user+assistant），
+    # 之后 build_chat_context 重建的上下文就不含旧答案，本次 message 当作新问重走全流程。
+    # 尾轮混有 system-notice 等事件时弹回 409——上下文已漂移，逼用户显式重问。
+    if regenerate:
+        truncated = await asyncio.to_thread(pop_last_turn, user["id"], project_id)
+        if not truncated:
+            raise HTTPException(
+                status_code=409,
+                detail="最新一轮对话之后发生了其他事件，无法重新生成，请直接发送新消息",
+            )
 
     chat_started = time.perf_counter()
     # 每轮对话独立重置“画布已读”印记：工具必须先读再改，跨轮不传递

@@ -90,6 +90,29 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = history.map(hydrate)
   }
 
+  /**
+   * 重新生成前的本地尾轮截断（UI1）：保留最后一条 user 消息（它就是本次要重答的问题），
+   * 截掉其后的所有 assistant 消息。镜像后端 chat_repo.pop_last_turn 的同态规则：
+   * 尾轮内一旦出现 system-notice 等第三方角色，拒绝截断（由后端 409 兑底、前端提前拦截）。
+   */
+  function truncateTailForRegenerate(): boolean {
+    let lastUserIndex = -1
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      if (messages.value[i].role === 'user') {
+        lastUserIndex = i
+        break
+      }
+    }
+    if (lastUserIndex < 0) return false
+
+    const tail = messages.value.slice(lastUserIndex + 1)
+    if (!tail.length || tail.some((message) => message.role !== 'assistant')) return false
+
+    tail.forEach((message) => message.attachments?.forEach(revokeAttachmentPreview))
+    messages.value = messages.value.slice(0, lastUserIndex + 1)
+    return true
+  }
+
   function clearUploadedAttachments() {
     uploadedAttachments.value.forEach(revokeAttachmentPreview)
     uploadedAttachments.value = []
@@ -159,6 +182,7 @@ export const useChatStore = defineStore('chat', () => {
     isCurrentLoadToken,
     clearMessages,
     setMessagesFromHistory,
+    truncateTailForRegenerate,
     clearUploadedAttachments,
     upsertUploadedAttachment,
     removeUploadedAttachment,

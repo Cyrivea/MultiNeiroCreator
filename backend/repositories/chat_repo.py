@@ -62,6 +62,44 @@ def list_history(user_id: int, project_id: int | None = None) -> list[dict]:
     return history
 
 
+def pop_last_turn(user_id: int, project_id: int | None = None) -> bool:
+    """重生成前置截断（UI1）：删除『最后一条 user 消息 + 其后的所有 assistant 消息』。
+
+    返回是否实际截断。拒绝条件（返回 False，调用方应报 409）：
+    - 根本没有 user 消息；
+    - 最后一条 user 之后没有 assistant 尾巴；
+    - 尾巴里混入 system-notice 等其他角色（说明最近一轮之后又发生了新事件，
+      此时重生成会让上下文漂移，必须由用户显式重新提问）。
+    """
+    with db_connection() as conn:
+        if project_id is None:
+            scope_sql = "SELECT id, role FROM messages WHERE user_id=? AND project_id IS NULL ORDER BY id"
+            rows = conn.execute(scope_sql, (user_id,)).fetchall()
+        else:
+            scope_sql = "SELECT id, role FROM messages WHERE user_id=? AND project_id=? ORDER BY id"
+            rows = conn.execute(scope_sql, (user_id, project_id)).fetchall()
+
+        last_user_pos: int | None = None
+        for pos in range(len(rows) - 1, -1, -1):
+            if rows[pos][1] == "user":
+                last_user_pos = pos
+                break
+        if last_user_pos is None:
+            return False
+
+        tail = rows[last_user_pos + 1 :]
+        if not tail or any(role != "assistant" for _, role in tail):
+            return False
+
+        doomed_ids = [row_id for row_id, _ in tail]
+        doomed_ids.append(rows[last_user_pos][0])
+        conn.execute(
+            f"DELETE FROM messages WHERE id IN ({','.join('?' * len(doomed_ids))})",
+            doomed_ids,
+        )
+        return True
+
+
 def clear_history(user_id: int, project_id: int | None = None) -> None:
     with db_connection() as conn:
         if project_id is None:

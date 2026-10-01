@@ -17,6 +17,9 @@ class ChatRequest(BaseModel):
     attachments: list[ChatAttachment] = Field(
         default_factory=list, max_length=config.CHAT_ATTACHMENTS_MAX_ITEMS
     )
+    # 重生成模式（前端消息操作栏）：为 True 时先截断数据库尾轮（user+assistant），
+    # 再按本次 message 正常落库——防同一问题在历史里重复堆叠（UI1）
+    regenerate: bool = False
 
 
 class ProfileRequest(BaseModel):

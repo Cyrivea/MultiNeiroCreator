@@ -26,7 +26,7 @@
         'has-attachment-dock': chatStore.hasUploadedAttachments,
       }"
     >
-      <MessageList />
+      <MessageList @regenerate="handleRegenerate" />
 
       <div v-if="chatStore.isSending" class="agent-status-line">
         <span class="agent-status-pulse" aria-hidden="true"></span>
@@ -65,10 +65,14 @@ async function scrollToBottom() {
   assistantBodyRef.value.scrollTop = assistantBodyRef.value.scrollHeight
 }
 
-const { sendMessage, loadHistory } = useAgentChat({ scrollToBottom })
+const { sendMessage, loadHistory, regenerateLastMessage } = useAgentChat({ scrollToBottom })
 
 function handleSend() {
   void sendMessage()
+}
+
+function handleRegenerate() {
+  void regenerateLastMessage()
 }
 
 // 历史被整体替换（加载 / done 重建）时保持滚动到底部

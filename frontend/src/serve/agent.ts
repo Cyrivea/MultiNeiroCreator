@@ -31,6 +31,8 @@ export interface AgentChatPayload {
   // 不再发送 history：对话历史以服务端数据库为唯一真源（A5），由后端按 project_id 重建
   project_id?: number | null
   attachments?: AgentAttachmentItem[]
+  /** 重生成模式（UI1）：后端先截断数据库里上一轮问答尾，再按本次 message 重新落库，防历史重复堆叠 */
+  regenerate?: boolean
 }
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'

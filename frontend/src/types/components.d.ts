@@ -19,6 +19,7 @@ declare module 'vue' {
     CreativeToolPanel: typeof import('./../components/creative/CreativeToolPanel.vue')['default']
     CreativeToolPicker: typeof import('./../components/creative/CreativeToolPicker.vue')['default']
     LoadingOverlay: typeof import('./../components/LoadingOverlay.vue')['default']
+    MarkdownBlock: typeof import('./../components/assistant/MarkdownBlock.vue')['default']
     MessageList: typeof import('./../components/assistant/MessageList.vue')['default']
     ParticleBackground: typeof import('./../components/ParticleBackground.vue')['default']
     ProjectSwitcher: typeof import('./../components/project/ProjectSwitcher.vue')['default']

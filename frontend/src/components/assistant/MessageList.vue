@@ -3,6 +3,17 @@
     <div class="agent-empty-orbit" aria-hidden="true"></div>
     <div class="agent-empty-title">Neyria 已就绪</div>
     <div class="agent-empty-meta">现在可以直接描述你的创作目标、风格、结构或具体问题。</div>
+    <div class="agent-empty-suggestions" role="list">
+      <button
+        v-for="suggestion in emptySuggestions"
+        :key="suggestion"
+        type="button"
+        class="agent-empty-suggestion"
+        @click="applySuggestion(suggestion)"
+      >
+        {{ suggestion }}
+      </button>
+    </div>
   </div>
 
   <TransitionGroup v-else name="agent-message-float" tag="div" class="agent-message-list">
@@ -42,7 +53,11 @@
               </span>
             </span>
           </template>
-          <template v-else>{{ message.content }}</template>
+          <template v-else>
+            <!-- 用户消息保持纯文本；助手消息走 Markdown 消毒管线（UI1） -->
+            <MarkdownBlock v-if="message.role === 'assistant'" :content="message.content" />
+            <template v-else>{{ message.content }}</template>
+          </template>
           <span v-if="message.interrupted" class="agent-interrupted-mark" title="生成中途被断开">
             （回复被中断，内容不完整）
           </span>
@@ -57,6 +72,65 @@
             <span class="agent-citation-source">{{ citation.source }}</span>
             <span>· 片段 {{ citation.chunk_index + 1 }}</span>
           </div>
+        </div>
+        <!-- open-webui 设计：助手消息 hover 时浮出操作栏；复制器输出原文，重新生成只挂最新一轮 -->
+        <div
+          v-if="message.role === 'assistant' && !message.isPending && message.content"
+          class="agent-message-actions"
+        >
+          <button
+            type="button"
+            class="agent-action-btn"
+            :title="copiedMessageId === message.id ? '已复制' : '复制回复'"
+            @click="copyMessageContent(message)"
+          >
+            <svg
+              v-if="copiedMessageId !== message.id"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="9" y="9" width="11" height="11" rx="2" />
+              <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+            </svg>
+            <svg
+              v-else
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          </button>
+          <button
+            v-if="isLastAssistantMessage(message)"
+            type="button"
+            class="agent-action-btn"
+            title="重新生成"
+            :disabled="chatStore.isSending"
+            @click="emit('regenerate')"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 4v6h-6" />
+              <path d="M21 10a9 9 0 1 1-2.64-6.36L21 6.5"/>
+            </svg>
+          </button>
         </div>
         <div v-if="message.attachments?.length" class="agent-message-attachments">
           <article
@@ -88,11 +162,53 @@
 
 <script setup lang="ts">
 // 消息列表（D1 拆分第 7 步，todo §8.4）：纯展示，数据来自 chat store。
-import { computed } from 'vue'
-import { formatToolName, useChatStore } from '@/stores/chat'
+import { computed, ref } from 'vue'
+import { ElMessage } from '@/utils/toast'
+import { formatToolName, useChatStore, type AgentMessage } from '@/stores/chat'
+import MarkdownBlock from './MarkdownBlock.vue'
+
+const emit = defineEmits<{ (e: 'regenerate'): void }>()
 
 const chatStore = useChatStore()
 const thinkingLetters = 'THINKING'.split('')
+const copiedMessageId = ref<string | null>(null)
+let copiedTimer: number | null = null
+
+// 空状态建议词条：借机把三大 Block 的生产能力前置到第一屏（open-webui Suggestions 设计）
+const emptySuggestions = [
+  '写一首关于「雨夜霓虹」的 cyberpop 歌词，两段主歌一次副歌',
+  '帮我把「歌词 → 封面图」的工作流搭好，参数配好先别运行',
+  '生成一张 16:9 的赛博朋克风专辑封面图',
+  '跑一遍当前工作流，完事了告诉我结果',
+]
+
+function applySuggestion(text: string) {
+  chatStore.draft = text
+}
+
+/** 仅允许对最新一条回复重新生成（后端按尾轮截断，中间消息重生成会导致上下文漂移） */
+function isLastAssistantMessage(message: AgentMessage) {
+  for (let i = visibleMessages.value.length - 1; i >= 0; i--) {
+    const item = visibleMessages.value[i]
+    if (item.role === 'assistant') return item.id === message.id
+  }
+  return false
+}
+
+async function copyMessageContent(message: AgentMessage) {
+  try {
+    await navigator.clipboard.writeText(message.content)
+  } catch {
+    ElMessage.error('复制失败，请检查浏览器剪贴板权限')
+    return
+  }
+  copiedMessageId.value = message.id
+  if (copiedTimer !== null) window.clearTimeout(copiedTimer)
+  copiedTimer = window.setTimeout(() => {
+    copiedMessageId.value = null
+    copiedTimer = null
+  }, 1500)
+}
 
 // 空气泡防御：历史里可能存在早期遗留的空 assistant 消息（模型只调工具未说话的年代），
 // 已读过且既无内容又无工具标记的一律不渲染。
@@ -270,6 +386,89 @@ const visibleMessages = computed(() =>
   text-transform: uppercase;
   animation: thinking-letter-wave 1.28s ease-in-out infinite;
   will-change: transform, opacity;
+}
+
+/* ------- 悬停操作栏（open-webui 设计） ------- */
+.agent-message-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+  pointer-events: none;
+}
+
+.agent-message:hover .agent-message-actions,
+.agent-message-actions:focus-within {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.agent-action-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.agent-action-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.agent-action-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.agent-action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ------- 空状态建议词条 ------- */
+.agent-empty-suggestions {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 340px;
+}
+
+.agent-empty-suggestion {
+  padding: 9px 14px;
+  border-radius: 14px;
+  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.agent-empty-suggestion:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  transform: translateY(-1px);
 }
 
 .agent-message.is-user .agent-message-bubble {

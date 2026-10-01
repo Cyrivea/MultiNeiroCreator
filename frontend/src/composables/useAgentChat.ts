@@ -106,9 +106,17 @@ export function useAgentChat(options: UseAgentChatOptions) {
     return true
   }
 
-  async function sendMessage() {
-    const message = chatStore.draft.trim()
-    const pendingAttachments = [...chatStore.uploadedAttachments]
+  interface SendOptions {
+    /** 重新生成等非输入框来源的文本 */
+    overrideMessage?: string
+    /** 重生成模式：后端截断数据库尾轮，前端镜像截断，不重复插用户气泡 */
+    regenerate?: boolean
+  }
+
+  async function sendMessage(sendOptions?: SendOptions) {
+    const regenerate = sendOptions?.regenerate === true
+    const message = (sendOptions?.overrideMessage ?? chatStore.draft).trim()
+    const pendingAttachments = regenerate ? [] : [...chatStore.uploadedAttachments]
     if (
       (!message && !pendingAttachments.length) ||
       chatStore.isSending ||
@@ -152,12 +160,6 @@ export function useAgentChat(options: UseAgentChatOptions) {
       chatStore.isUploadingAttachment = false
     }
 
-    const userMessage: AgentMessage = {
-      id: chatStore.nextMessageId(),
-      role: 'user',
-      content: message || '已发送附件',
-      attachments: pendingAttachments.map(cloneAttachmentForMessage),
-    }
     const assistantMessageSeed: AgentMessage = {
       id: chatStore.nextMessageId(),
       role: 'assistant',
@@ -166,7 +168,22 @@ export function useAgentChat(options: UseAgentChatOptions) {
       isPending: true,
     }
 
-    chatStore.messages = [...chatStore.messages, userMessage, assistantMessageSeed]
+    if (regenerate) {
+      // 镜像后端 pop_last_turn：打掉尾轮旧答案，保留用户原问气泡
+      if (!chatStore.truncateTailForRegenerate()) {
+        ElMessage.warning('最新一轮对话无法重新生成（之后有其他事件），请直接发送新消息')
+        return
+      }
+      chatStore.messages = [...chatStore.messages, assistantMessageSeed]
+    } else {
+      const userMessage: AgentMessage = {
+        id: chatStore.nextMessageId(),
+        role: 'user',
+        content: message || '已发送附件',
+        attachments: pendingAttachments.map(cloneAttachmentForMessage),
+      }
+      chatStore.messages = [...chatStore.messages, userMessage, assistantMessageSeed]
+    }
     // 流式回调必须改数组里的响应式代理对象；直接改 seed 原始对象绕过 Vue 响应式（B1 教训）
     const assistantMessage = chatStore.messages[chatStore.messages.length - 1]
     // token 是一簇一簇到达的，经打字机缓冲后按帧匀速上屏，消除跳字感
@@ -178,8 +195,11 @@ export function useAgentChat(options: UseAgentChatOptions) {
       void options.scrollToBottom()
     })
 
-    chatStore.draft = ''
-    chatStore.clearUploadedAttachments()
+    if (!regenerate) {
+      // 重生成不归用户重发：不清草稿、不动待发送附件
+      chatStore.draft = ''
+      chatStore.clearUploadedAttachments()
+    }
     chatStore.isSending = true
     chatStore.activeToolName = ''
     startThinking()
@@ -200,6 +220,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
           message,
           project_id: projectStore.id,
           attachments: attachmentPayloads,
+          ...(regenerate ? { regenerate: true } : {}),
         },
         {
           onTool(event) {
@@ -281,8 +302,27 @@ export function useAgentChat(options: UseAgentChatOptions) {
     stopThinking()
   })
 
+  /** 重新生成最新一轮回复（open-webui 消息操作栏设计）：取最后一条用户消息原文重发 */
+  async function regenerateLastMessage() {
+    if (chatStore.isSending || chatStore.isUploadingAttachment) return
+    let lastUserContent = ''
+    for (let i = chatStore.messages.length - 1; i >= 0; i--) {
+      const item = chatStore.messages[i]
+      if (item.role === 'user') {
+        lastUserContent = item.content
+        break
+      }
+    }
+    if (!lastUserContent) {
+      ElMessage.info('还没有可以重新生成的回复')
+      return
+    }
+    await sendMessage({ overrideMessage: lastUserContent, regenerate: true })
+  }
+
   return {
     sendMessage,
     loadHistory,
+    regenerateLastMessage,
   }
 }
