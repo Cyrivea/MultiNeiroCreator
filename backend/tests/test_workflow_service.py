@@ -350,7 +350,7 @@ def test_workflow_rejects_unconfigured_capability(memory_repo):
         {
             "id": "n-ghost",
             "kind": "tool",
-            "capability_id": "video.generate",
+            "capability_id": "audio.generate",  # 尚未注册的能力（video.generate 已真实接入）
             "name": "视频生成",
         }
     )

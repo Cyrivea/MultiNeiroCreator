@@ -15,7 +15,7 @@ from core import config
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
-_ALLOWED_SUFFIX = {".png", ".jpg", ".jpeg", ".webp"}
+_ALLOWED_SUFFIX = {".png", ".jpg", ".jpeg", ".webp", ".mp4"}
 
 
 @router.get("/{filename}")

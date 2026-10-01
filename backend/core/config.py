@@ -42,6 +42,7 @@ CHAT_MODEL = os.getenv("CHAT_MODEL", "glm-4-flash").strip()
 LYRICS_MODEL = os.getenv("LYRICS_MODEL", "glm-4-flash").strip()
 # 图像走 SiliconFlow Kolors（中文友好；该账号 FLUX 被禁用）
 IMAGE_MODEL = os.getenv("IMAGE_MODEL", "Kwai-Kolors/Kolors").strip()
+VIDEO_MODEL = os.getenv("VIDEO_MODEL", "Wan-AI/Wan2.2-T2V-A14B").strip()
 SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "").strip()
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3").strip()
 EMBEDDING_API_URL = os.getenv("EMBEDDING_API_URL", "https://api.siliconflow.cn/v1/embeddings").strip()
@@ -93,6 +94,7 @@ BILLING_TEST_GRANT_PERIOD_DAYS = int(os.getenv("BILLING_TEST_GRANT_PERIOD_DAYS",
 # 各能力调用前的默认预占估值（积分）。多预占部分在结算后退返，保证硬约束“不出现负余额”。
 BILLING_LYRICS_RESERVE_CREDITS = os.getenv("BILLING_LYRICS_RESERVE_CREDITS", "3").strip()
 BILLING_IMAGE_RESERVE_CREDITS = os.getenv("BILLING_IMAGE_RESERVE_CREDITS", "2").strip()
+BILLING_VIDEO_RESERVE_CREDITS = os.getenv("BILLING_VIDEO_RESERVE_CREDITS", "5").strip()
 # 预占超过这个秒数未被结算/释放视为提交方崩溃，由 sweep 恢复原占用额度
 BILLING_RESERVATION_STALE_SECONDS = int(os.getenv("BILLING_RESERVATION_STALE_SECONDS", "600"))
 

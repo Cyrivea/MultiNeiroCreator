@@ -100,6 +100,7 @@ function positionForIndex(index: number) {
 const CAPABILITY_TO_TOOL_TYPE: Record<string, CreativeToolType> = {
   'lyrics.generate': 'lyrics',
   'image.generate': 'image',
+  'video.generate': 'video',
 }
 
 const TOOL_TYPE_TO_CAPABILITY: Record<CreativeToolType, string> = {
@@ -445,7 +446,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
       return submission.status as ToolRunStatus
     }
     try {
-      const job = await waitForAgentJob(submission.job_id)
+      // 视频生成实测 1~5 分钟（后端轮询兜底 10 分钟），前端等待预算放宽到 12 分钟
+      const job = await waitForAgentJob(submission.job_id, 12 * 60 * 1000)
       // B28 防重复提醒：手动运行路径的组件自己会弹 toast + 提示音，
       // 登记给 tasks 轮询，别再重复弹第二次通知。
       useTaskStore().markTerminalNotified(job.id)

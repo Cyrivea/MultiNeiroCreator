@@ -218,51 +218,53 @@
             </template>
 
             <template v-else-if="tool.type === 'video'">
-              <div class="field-row">
-                <div class="field">
-                  <span class="field-label">输入方式</span>
-                  <select
-                    class="field-control field-select"
-                    :value="tool.params.source"
-                    @change="update('source', $event)"
-                  >
-                    <option>文字描述</option>
-                    <option>图片驱动</option>
-                    <option>音频驱动</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <span class="field-label">时长</span>
-                  <select
-                    class="field-control field-select"
-                    :value="tool.params.duration"
-                    @change="update('duration', $event)"
-                  >
-                    <option>5 秒</option>
-                    <option>15 秒</option>
-                    <option>30 秒</option>
-                    <option>60 秒</option>
-                  </select>
-                </div>
-              </div>
               <div class="field">
                 <span class="field-label">镜头描述</span>
                 <textarea
                   class="field-control field-textarea"
                   :value="tool.params.prompt"
                   rows="4"
-                  placeholder="描述镜头运动和画面节奏"
+                  placeholder="描述镜头运动和画面节奏，例如：镜头缓慢推进穿过雨夜的城市街道"
                   @input="update('prompt', $event)"
                 ></textarea>
               </div>
+              <div class="field-row">
+                <div class="field">
+                  <span class="field-label">视觉风格</span>
+                  <select
+                    class="field-control field-select"
+                    :value="tool.params.style"
+                    @change="update('style', $event)"
+                  >
+                    <option>电影写实</option>
+                    <option>二次元动画</option>
+                    <option>3D 渲染</option>
+                    <option>复古胶片</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <span class="field-label">画面比例</span>
+                  <select
+                    class="field-control field-select"
+                    :value="tool.params.ratio"
+                    @change="update('ratio', $event)"
+                  >
+                    <option>16:9</option>
+                    <option>1:1</option>
+                    <option>9:16</option>
+                  </select>
+                </div>
+              </div>
               <div class="field">
-                <span class="field-label">运动方式</span>
-                <input
-                  class="field-control field-input"
-                  :value="tool.params.motion"
-                  placeholder="例如：平滑推进"
-                  @input="update('motion', $event)"
-                />
+                <span class="field-label">时长</span>
+                <select
+                  class="field-control field-select"
+                  :value="tool.params.duration"
+                  @change="update('duration', $event)"
+                >
+                  <option>5 秒</option>
+                  <option>10 秒</option>
+                </select>
               </div>
             </template>
 
@@ -381,6 +383,23 @@
             <pre v-else class="result-content">{{ toolRun.content }}</pre>
           </section>
           <section
+            v-else-if="runnableTool && toolRun?.status === 'succeeded' && tool.type === 'video'"
+            class="block result-block"
+          >
+            <header class="result-head">
+              <span>视频生成结果</span>
+              <span class="result-meta">最新一次运行</span>
+            </header>
+            <video
+              v-if="videoResultUrl"
+              class="result-video"
+              :src="videoResultUrl"
+              controls
+              preload="metadata"
+            ></video>
+            <pre v-else class="result-content">{{ toolRun.content }}</pre>
+          </section>
+          <section
             v-else-if="runnableTool && toolRun && toolRun.status !== 'running'"
             class="block error-block"
           >
@@ -424,11 +443,19 @@ const toolRunsStore = useToolRunsStore()
 const tool = computed(() => creativeToolsStore.activePanelTool)
 const references = computed(() => tool.value?.references ?? [])
 const toolRun = computed(() => (tool.value ? (toolRunsStore.records[tool.value.id] ?? null) : null))
-const runnableTool = computed(() => tool.value?.type === 'lyrics' || tool.value?.type === 'image')
+const runnableTool = computed(
+  () => tool.value?.type === 'lyrics' || tool.value?.type === 'image' || tool.value?.type === 'video',
+)
 const isGenerating = computed(() => toolRun.value?.status === 'running')
-const generateButtonText = computed(() => (tool.value?.type === 'image' ? '生成图片' : '生成歌词'))
+const generateButtonText = computed(() =>
+  tool.value?.type === 'image' ? '生成图片' : tool.value?.type === 'video' ? '生成视频' : '生成歌词',
+)
 const generationFailureText = computed(() =>
-  tool.value?.type === 'image' ? '图像模型尚未配置，请稍后再试' : '歌词生成失败，请稍后重试',
+  tool.value?.type === 'image'
+    ? '图像模型尚未配置，请稍后再试'
+    : tool.value?.type === 'video'
+      ? '视频模型尚未配置或生成超时，请稍后再试'
+      : '歌词生成失败，请稍后重试',
 )
 const mainInputSource = computed(() => {
   const nodeId = tool.value
@@ -484,6 +511,14 @@ const imageResultUrl = computed(() => {
   const content = toolRun.value?.content
   if (!content) return null
   const match = content.match(/!\[[^\]]*\]\(([^)]+)\)/)
+  return match?.[1] ?? null
+})
+
+// 视频结果同样以 markdown 行回传（![视频](/api/assets/xxx.mp4)），渲染为 <video>
+const videoResultUrl = computed(() => {
+  const content = toolRun.value?.content
+  if (!content) return null
+  const match = content.match(/!\[[^\]]*\]\(([^)]+\.mp4)\)/)
   return match?.[1] ?? null
 })
 
@@ -1065,6 +1100,15 @@ function artMark(type: string) {
   max-width: 100%;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.result-video {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #000;
 }
 
 .result-block {

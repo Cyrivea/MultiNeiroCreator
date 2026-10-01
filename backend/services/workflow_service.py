@@ -415,6 +415,25 @@ def configure_image(
     )
 
 
+def configure_video(
+    user_id: int,
+    project_id: int | None,
+    inputs: dict[str, Any],
+    upstream_node_id: str | None = None,
+) -> dict[str, Any]:
+    from schemas.capability import VideoGenerateInput
+
+    validated = VideoGenerateInput.model_validate(inputs)
+    return configure_capability(
+        user_id,
+        project_id,
+        "video.generate",
+        "video",
+        validated.model_dump(),
+        upstream_node_id,
+    )
+
+
 def _execution_order(draft: dict[str, Any]) -> list[dict[str, Any]]:
     """从 Input 出发做广度优先排序；能跑的能力节点按拓扑次序逐个执行。"""
     edges = draft.get("edges", [])

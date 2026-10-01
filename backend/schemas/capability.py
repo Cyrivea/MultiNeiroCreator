@@ -12,6 +12,10 @@ ImageStyle = Literal["电影概念艺术", "二次元插画", "写实摄影", "�
 ImageRatio = Literal["16:9", "1:1", "9:16", "4:3"]
 ImagePalette = Literal["深蓝与紫色", "黑白", "暖金", "低饱和绿色", "高对比彩色"]
 
+VideoStyle = Literal["电影写实", "二次元动画", "3D 渲染", "复古胶片"]
+VideoRatio = Literal["16:9", "1:1", "9:16"]
+VideoDuration = Literal["5 秒", "10 秒"]
+
 
 class LyricsGenerateInput(BaseModel):
     """歌词 Block 的受控输入；前后端和 Assistant 共用。"""
@@ -31,12 +35,21 @@ class ImageGenerateInput(BaseModel):
     palette: ImagePalette = "深蓝与紫色"
 
 
+class VideoGenerateInput(BaseModel):
+    """视频 Block 的受控输入（Wan2.2-T2V 文生视频）；与前端面板共用校验边界。"""
+
+    prompt: str = Field(..., min_length=1, max_length=500)
+    style: VideoStyle = "电影写实"
+    ratio: VideoRatio = "16:9"
+    duration: VideoDuration = "5 秒"
+
+
 class CapabilityRunRequest(BaseModel):
     """独立运行入口：按 capability_id 白名单扩展，输入类型随场景。"""
 
-    capability_id: Literal["lyrics.generate", "image.generate"]
+    capability_id: Literal["lyrics.generate", "image.generate", "video.generate"]
     project_id: int | None = None
-    inputs: LyricsGenerateInput | ImageGenerateInput
+    inputs: LyricsGenerateInput | ImageGenerateInput | VideoGenerateInput
 
 
 class CapabilityResult(BaseModel):

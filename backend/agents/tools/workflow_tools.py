@@ -19,6 +19,10 @@ from schemas.capability import (
     LyricsLanguage,
     LyricsMood,
     LyricsStyle,
+    VideoDuration,
+    VideoGenerateInput,
+    VideoRatio,
+    VideoStyle,
 )
 from services.capabilities import current_capability_context
 from services.workflow_service import (
@@ -26,6 +30,7 @@ from services.workflow_service import (
     clear_workflow,
     configure_image,
     configure_lyrics,
+    configure_video,
     get_run_status_detail,
     get_workflow_summary,
     mark_canvas_read,
@@ -120,6 +125,51 @@ def configure_image_workflow(
             "revision": configured["revision"],
             "node_id": configured["node_id"],
             "message": "已在工作区创建并配置图像生成节点。图像模型尚未配置时可先搭建流程。",
+            "_ui_events": [{"type": "workflow_snapshot", "snapshot": configured["draft"]}],
+        }
+    )
+
+
+@tool
+def configure_video_workflow(
+    prompt: str,
+    style: VideoStyle = "电影写实",
+    ratio: VideoRatio = "16:9",
+    duration: VideoDuration = "5 秒",
+    upstream_node_id: str | None = None,
+) -> str:
+    """在当前工作区创建或配置视频生成节点，并自动连接输入和输出。
+
+    铁律1：先调用 read_workflow_state（忘了平台代读）；
+    铁律2：只配置不执行，要结果必须紧接 run_current_workflow；
+    铁律3：风格/比例/时长必须走各自的结构化参数，别把“16:9”“5秒”
+    这类控制信号写进 prompt 文本里——prompt 只写镜头与画面描述。
+
+    视频生成耗时 1~5 分钟（异步任务队列），运行期间画布锁定，
+    可用 get_workflow_run_status 查询进度。
+
+    当视频需要承接上一个节点的产物（如歌词）时，把该节点 id 传给
+    upstream_node_id，并在 prompt 里写上 `${upstream.result.content}` 引用。
+
+    Args:
+        prompt: 镜头与画面描述（运动、景别、氛围），不超过 500 字符。
+        style: 视觉风格，只能选择平台支持的风格。
+        ratio: 画面比例，只能选择 16:9/1:1/9:16。
+        duration: 视频时长，只能选择 5 秒/10 秒。
+        upstream_node_id: 上游节点 ID，用于把当前节点接到已有工作流之后。
+    """
+    execution = current_capability_context()
+    inputs = VideoGenerateInput(prompt=prompt, style=style, ratio=ratio, duration=duration)
+    configured = configure_video(
+        execution.user_id, execution.project_id, inputs.model_dump(), upstream_node_id
+    )
+    return _json(
+        {
+            "status": "configured",
+            "workflow_id": configured["id"],
+            "revision": configured["revision"],
+            "node_id": configured["node_id"],
+            "message": "已在工作区创建并配置视频生成节点。视频模型尚未配置时可先搭建流程。",
             "_ui_events": [{"type": "workflow_snapshot", "snapshot": configured["draft"]}],
         }
     )

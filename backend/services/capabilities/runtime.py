@@ -16,6 +16,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
@@ -169,8 +170,17 @@ def _image_executor(inputs: BaseModel) -> dict:
     return generate_image(inputs)
 
 
+def _video_executor(inputs: BaseModel) -> dict:
+    """真实视频 Provider（SiliconFlow Wan2.2-T2V）。阻塞轮询 1~5 分钟，依赖调用方在线程池里跑。"""
+    from schemas.capability import VideoGenerateInput
+    from services.capabilities.siliconflow_video import generate_video
+
+    assert isinstance(inputs, VideoGenerateInput)
+    return generate_video(inputs)
+
+
 def _register() -> dict[str, CapabilityEntry]:
-    from schemas.capability import ImageGenerateInput, LyricsGenerateInput
+    from schemas.capability import ImageGenerateInput, LyricsGenerateInput, VideoGenerateInput
 
     return {
         "lyrics.generate": CapabilityEntry(
@@ -189,6 +199,14 @@ def _register() -> dict[str, CapabilityEntry]:
             billing_model=lambda: config.IMAGE_MODEL,
             billing_estimate=lambda: Decimal(config.BILLING_IMAGE_RESERVE_CREDITS),
         ),
+        "video.generate": CapabilityEntry(
+            capability_id="video.generate",
+            display_name="视频",
+            input_model=VideoGenerateInput,
+            executor=_video_executor,
+            billing_model=lambda: config.VIDEO_MODEL,
+            billing_estimate=lambda: Decimal(config.BILLING_VIDEO_RESERVE_CREDITS),
+        ),
     }
 
 
@@ -200,15 +218,21 @@ async def _write_asset(asset: dict, context: CapabilityContext) -> None:
     try:
         from repositories import asset_repo
 
+        # 按扩展名推导资产种类：视频 Block 与图像 Block 共用这条落库路径
+        suffix = Path(asset["filename"]).suffix.lower()
+        kind, content_type = (
+            ("video", "video/mp4") if suffix == ".mp4" else ("image", "image/png")
+        )
+
         await asyncio.to_thread(
             asset_repo.insert,
             user_id=context.user_id,
             project_id=context.project_id,
             run_id=None,
             capability_id=asset["capability_id"],
-            kind="image",
+            kind=kind,
             filename=asset["filename"],
-            content_type="image/png",
+            content_type=content_type,
             byte_size=0,
             prompt_snapshot=asset.get("prompt_snapshot"),
             usage_event_id=None,

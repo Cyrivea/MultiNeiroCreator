@@ -150,7 +150,7 @@ def test_run_records_env_snapshot(real_db):
     run = workflow_run_repo.get(user, submission["run_id"])
     env = run["env_snapshot"]
     assert env["chat_model"]
-    assert env["capabilities"] == ["image.generate", "lyrics.generate"]
+    assert env["capabilities"] == ["image.generate", "lyrics.generate", "video.generate"]
     assert len(env["prompt_sha256"]) == 16
     assert "30_workflow_rules.md" in env["prompt_sections"]
 

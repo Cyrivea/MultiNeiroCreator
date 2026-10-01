@@ -66,15 +66,15 @@ export const creativeToolCatalog: CreativeToolCatalogItem[] = [
   {
     type: 'video',
     name: '视频生成',
-    description: '支持文字、图片或音频驱动的音乐视觉视频创作。',
-    badge: '图 / 声 / 文生视频',
+    description: '把镜头与画面描述转成短视频片段（文生视频）。',
+    badge: '文字生视频',
     color: '#a6a6a6',
-    inputHint: '输入素材、镜头、节奏',
+    inputHint: '镜头描述、风格、比例、时长',
     defaults: {
-      source: '文字描述',
-      prompt: '镜头穿过雨夜城市，跟随音乐节奏缓慢推进',
-      motion: '平滑推进',
-      duration: '15 秒',
+      prompt: '镜头缓慢推进穿过雨夜的城市街道，霓虹灯反射在湿漉漉的地面上',
+      style: '电影写实',
+      ratio: '16:9',
+      duration: '5 秒',
     },
   },
   {
