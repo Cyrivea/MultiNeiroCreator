@@ -11,10 +11,31 @@
       accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.json,.csv,image/png,image/jpeg,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
       @change="handleAttachmentPicked"
     />
+    <!-- UI2-⑥：生成中允许继续敲打草稿（发送进排队），输入框不锁 -->
+    <Transition name="attachment-dock-float">
+      <div v-if="chatStore.messageQueue.length" class="composer-queue" role="list">
+        <div
+          v-for="item in chatStore.messageQueue"
+          :key="item.id"
+          class="composer-queue-item"
+          role="listitem"
+          :title="item.message"
+        >
+          <span class="composer-queue-text">{{ item.message }}</span>
+          <button
+            type="button"
+            class="composer-queue-remove"
+            aria-label="从队列移除"
+            @click="chatStore.removeQueuedMessage(item.id)"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    </Transition>
     <textarea
       v-model="chatStore.draft"
       placeholder="我来帮你实现想法！"
-      :disabled="chatStore.isSending"
       @keydown="handleComposerKeydown"
     ></textarea>
     <div class="input-composer-toolbar">
@@ -73,18 +94,28 @@
             </div>
           </Transition>
         </div>
+        <!-- UI2-①⑥：生成中 Stop 与 Send 同框——Send 此时语义是“排队”（open-webui 设计），
+             否则流式期间没有任何把下一条送进去的入口 -->
+        <button
+          v-if="chatStore.isSending"
+          class="composer-action stop"
+          title="停止生成"
+          type="button"
+          @click="emit('stop')"
+        >
+          <span class="composer-action-icon">■</span>
+        </button>
         <button
           class="composer-action primary"
-          title="Send"
+          :title="chatStore.isSending ? '加入发送队列' : 'Send'"
           type="button"
           :disabled="
-            chatStore.isSending ||
             chatStore.isUploadingAttachment ||
             (!chatStore.draft.trim() && !chatStore.hasUploadedAttachments)
           "
           @click="emit('send')"
         >
-          <span class="composer-action-icon">{{ chatStore.isSending ? '...' : '↑' }}</span>
+          <span class="composer-action-icon">↑</span>
         </button>
       </div>
     </div>
@@ -107,7 +138,7 @@ interface ModelOption {
   disabled?: boolean
 }
 
-const emit = defineEmits<{ (e: 'send'): void }>()
+const emit = defineEmits<{ (e: 'send'): void; (e: 'stop'): void }>()
 
 const chatStore = useChatStore()
 const projectStore = useProjectStore()
@@ -295,6 +326,67 @@ onBeforeUnmount(() => {
 .composer-action:disabled {
   opacity: 0.56;
   cursor: default;
+}
+
+/* UI2-①：停止按钮——与 Send 同位置同尺寸，方块图标表达“可中断” */
+.composer-action.stop {
+  background: rgba(220, 60, 60, 0.16);
+  border: 1px solid rgba(220, 60, 60, 0.32) !important;
+  color: #f0b7b7;
+}
+
+.composer-action.stop:hover {
+  background: rgba(220, 60, 60, 0.28);
+}
+
+/* UI2-⑥：排队消息条（斜在输入框上方，可单条移除） */
+.composer-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composer-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.composer-queue-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-queue-item::before {
+  content: '排队中';
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(122, 162, 255, 0.16);
+  color: rgb(158, 188, 255);
+}
+
+.composer-queue-remove {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+}
+
+.composer-queue-remove:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
 }
 
 .composer-tool {

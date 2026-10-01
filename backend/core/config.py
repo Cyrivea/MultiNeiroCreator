@@ -83,6 +83,12 @@ PROFILE_MAX_CHARS = int(os.getenv("PROFILE_MAX_CHARS", "5000"))
 # 意图分类器：开=规则+便宜模型三级漏斗，off=回滚到 prompt-only 老路
 INTENT_CLASSIFIER_ENABLED = os.getenv("INTENT_CLASSIFIER_ENABLED", "on").strip().lower() != "off"
 
+# 追问建议（UI2-③）：回复完成后用同模型补记 2~3 条后续方向。多一次便宜的短调用，
+# 失败静默降级为空列表；off 用于压测或成本收紧场景。
+FOLLOWUP_SUGGESTIONS_ENABLED = (
+    os.getenv("FOLLOWUP_SUGGESTIONS_ENABLED", "on").strip().lower() != "off"
+)
+
 # ===== 计费（商业化阶段 1，《计费与商业化方案.md》）=====
 # off=完全不接入 billing；track=记帐（预占+结算流水）但积分不足不拒绝（试验盘数据用）；
 # enforce=积分不足在上游调用前拒绝（不按负不留坏账）。默认 off 保证测试/开发环境稳定。

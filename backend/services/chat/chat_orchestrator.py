@@ -32,7 +32,7 @@ from core.injection_guard import (
     guard_untrusted_content,
     scan_assistant_reply,
 )
-from repositories.chat_repo import append_message, pop_last_turn
+from repositories.chat_repo import append_message, pop_last_turn, truncate_from_message
 from services.capabilities import CapabilityContext, use_capability_context
 from services.chat.context_builder import build_chat_context
 from services.chat.intent_classifier import classify as classify_intent
@@ -239,6 +239,7 @@ async def stream_chat(
     project_id: int | None = None,
     attachments: list[dict] | None = None,
     regenerate: bool = False,
+    edit_from_id: int | None = None,
 ) -> AsyncGenerator[str, None]:
     """对话流外层：兼做流中断兜底。
 
@@ -248,7 +249,9 @@ async def stream_chat(
     """
     started = time.perf_counter()
     try:
-        async for event in _orchestrate(user, message, project_id, attachments, regenerate):
+        async for event in _orchestrate(
+            user, message, project_id, attachments, regenerate, edit_from_id
+        ):
             yield event
     except HTTPException:
         raise
@@ -271,9 +274,13 @@ async def _orchestrate(
     project_id: int | None = None,
     attachments: list[dict] | None = None,
     regenerate: bool = False,
+    edit_from_id: int | None = None,
 ) -> AsyncGenerator[str, None]:
     if client is None:
         raise HTTPException(status_code=503, detail="未配置 API_KEY，聊天功能暂不可用")
+
+    if regenerate and edit_from_id is not None:
+        raise HTTPException(status_code=400, detail="regenerate 与 edit_from_id 互斥，只能传一个")
 
     # 重生成模式（UI1）：先在事务语义下截掉数据库尾轮（user+assistant），
     # 之后 build_chat_context 重建的上下文就不含旧答案，本次 message 当作新问重走全流程。
@@ -284,6 +291,19 @@ async def _orchestrate(
             raise HTTPException(
                 status_code=409,
                 detail="最新一轮对话之后发生了其他事件，无法重新生成，请直接发送新消息",
+            )
+
+    # 编辑重发（UI2-②）：从指定 user 消息起连同后续所有消息一并截断，本次 message
+    # 当作改写后的新问题重新落库。删除范围包含后续 user 消息，前端已在确认框里
+    # 向用户明示丢失数量；编辑操作不可撤销，不做软删。
+    if edit_from_id is not None:
+        truncated = await asyncio.to_thread(
+            truncate_from_message, user["id"], project_id, edit_from_id
+        )
+        if not truncated:
+            raise HTTPException(
+                status_code=409,
+                detail="要编辑的消息不存在或已变化，请刷新后重试",
             )
 
     chat_started = time.perf_counter()
@@ -548,7 +568,9 @@ async def _orchestrate(
         raise
 
     clean_history = ctx.clean_history
-    await asyncio.to_thread(
+    # append_message 返回行 id：回填进 done 事件的历史项，本轮新消息立刻带上 id，
+    # 前端不用为「消息可操作（评分/编辑）」多做一次历史重拉（UI2）
+    user_row_id = await asyncio.to_thread(
         append_message,
         user["id"],
         "user",
@@ -556,13 +578,15 @@ async def _orchestrate(
         project_id,
         ctx.attachments,
     )
+    if clean_history and clean_history[-1].get("role") == "user" and user_row_id:
+        clean_history[-1]["id"] = user_row_id
     assistant_history_item: dict = {"role": "assistant", "content": reply}
     if ctx.citations:
         assistant_history_item["citations"] = ctx.citations
     clean_history.append(assistant_history_item)
 
     if ctx.citations:
-        await asyncio.to_thread(
+        assistant_row_id = await asyncio.to_thread(
             append_message,
             user["id"],
             "assistant",
@@ -572,7 +596,11 @@ async def _orchestrate(
             ctx.citations,
         )
     else:
-        await asyncio.to_thread(append_message, user["id"], "assistant", reply, project_id)
+        assistant_row_id = await asyncio.to_thread(
+            append_message, user["id"], "assistant", reply, project_id
+        )
+    if assistant_row_id:
+        assistant_history_item["id"] = assistant_row_id
 
     now = time.perf_counter()
     logger.info(
@@ -599,3 +627,55 @@ async def _orchestrate(
             "citations": ctx.citations,
         }
     )
+
+    # UI2-③：done 之后再出追问建议（open-webui FollowUps 设计）——不阻塞正文上屏，
+    # 失败静默降级为空列表，绝不让一次锦上添花变成用户可见的错误
+    followups = await _generate_followups(message, reply)
+    if followups:
+        yield _sse({"type": "suggestions", "items": followups})
+
+
+_FOLLOWUP_SYSTEM = (
+    "你是一个对话引导助手。用户刚和 AI 创作工作站进行了一轮问答。"
+    "请基于这轮问答，生成 2~3 条用户接下来可能想问的问题。"
+    "要求：每条不超过 20 个汉字；必须是用户向 AI 提问的第一人称视角；"
+    "与这轮内容直接相关、具体可执行；不要重复这轮已经回答的内容。"
+    "严格只输出一个 JSON 数组，例如 [\"问题一\", \"问题二\"]，不要输出任何其他文字。"
+)
+
+
+async def _generate_followups(user_message: str, reply: str) -> list[str]:
+    """生成追问建议；任何环节出错都返回 []（降级语义：没有建议=没有功能失效）。"""
+    if not config.FOLLOWUP_SUGGESTIONS_ENABLED or client is None:
+        return []
+    if not reply.strip():
+        return []
+    try:
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
+            model=config.CHAT_MODEL,
+            messages=[
+                {"role": "system", "content": _FOLLOWUP_SYSTEM},
+                {
+                    "role": "user",
+                    "content": f"用户问：{user_message[:500]}\n\nAI 答：{reply[:1000]}",
+                },
+            ],
+            max_tokens=150,
+        )
+        raw = (response.choices[0].message.content or "").strip()
+        # 模型偶尔用 ```json 围栏包裹，剥掉再解析；找不到数组就放弃
+        if "```" in raw:
+            raw = raw.split("```")[1] if raw.count("```") >= 2 else raw.strip("`")
+            raw = raw.lstrip("json").strip()
+        start, end = raw.find("["), raw.rfind("]")
+        if start < 0 or end <= start:
+            return []
+        items = json.loads(raw[start : end + 1])
+        if not isinstance(items, list):
+            return []
+        cleaned = [str(item).strip() for item in items if str(item).strip()]
+        return [item[:40] for item in cleaned[:3]]
+    except Exception:
+        logger.info("追问建议生成失败，本轮略过", extra={"evt": "followup_fallback"})
+        return []

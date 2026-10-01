@@ -11,9 +11,10 @@ def append_message(
     attachments: list[dict] | None = None,
     citations: list[dict] | None = None,
     interrupted: bool = False,
-) -> None:
+) -> int:
+    """落库并返回消息 id——前端需要 id 才能对指定消息评分/编辑重发（UI2）。"""
     with db_connection() as conn:
-        conn.execute(
+        cursor = conn.execute(
             "INSERT INTO messages "
             "(user_id, project_id, role, content, attachments_json, citations_json, interrupted) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -27,27 +28,69 @@ def append_message(
                 1 if interrupted else 0,
             ),
         )
+        return int(cursor.lastrowid)
+
+
+def set_feedback(user_id: int, message_id: int, value: int | None) -> bool:
+    """UI2-⑤：对指定账号自己的消息写/清评分。越权或消息不存在返回 False。"""
+    with db_connection() as conn:
+        cursor = conn.execute(
+            "UPDATE messages SET feedback=? WHERE id=? AND user_id=?",
+            (value, message_id, user_id),
+        )
+        return cursor.rowcount == 1
+
+
+def truncate_from_message(user_id: int, project_id: int | None, message_id: int) -> bool:
+    """UI2-②：编辑重发前置截断——从指定 user 消息起的所有后续消息全部删除。
+
+    与 pop_last_turn 的差异：目标由调用方指定的消息 id 决定（不一定是尾轮），
+    且后续的 user/system-notice 也一并删除——用户在前端确认框里显式同意了
+    「此操作会删除该消息之后的 N 条对话」，这里只做归属与角色校验。
+    返回是否实际截断（消息不存在 / 不属于该用户与工程 / 不是 user 消息 → False，调用方报 409）。
+    """
+    with db_connection() as conn:
+        if project_id is None:
+            target = conn.execute(
+                "SELECT role FROM messages WHERE id=? AND user_id=? AND project_id IS NULL",
+                (message_id, user_id),
+            ).fetchone()
+            scope_sql = "user_id=? AND project_id IS NULL AND id>=?"
+            scope_params: tuple = (user_id, message_id)
+        else:
+            target = conn.execute(
+                "SELECT role FROM messages WHERE id=? AND user_id=? AND project_id=?",
+                (message_id, user_id, project_id),
+            ).fetchone()
+            scope_sql = "user_id=? AND project_id=? AND id>=?"
+            scope_params = (user_id, project_id, message_id)
+        if target is None or target[0] != "user":
+            return False
+        conn.execute(f"DELETE FROM messages WHERE {scope_sql}", scope_params)
+        return True
 
 
 def list_history(user_id: int, project_id: int | None = None) -> list[dict]:
     with db_connection() as conn:
         if project_id is None:
             rows = conn.execute(
-                "SELECT role, content, attachments_json, citations_json, interrupted FROM messages"
-                " WHERE user_id=? AND project_id IS NULL ORDER BY id",
+                "SELECT id, role, content, attachments_json, citations_json, interrupted, feedback"
+                " FROM messages WHERE user_id=? AND project_id IS NULL ORDER BY id",
                 (user_id,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT role, content, attachments_json, citations_json, interrupted FROM messages"
-                " WHERE user_id=? AND project_id=? ORDER BY id",
+                "SELECT id, role, content, attachments_json, citations_json, interrupted, feedback"
+                " FROM messages WHERE user_id=? AND project_id=? ORDER BY id",
                 (user_id, project_id),
             ).fetchall()
     history: list[dict] = []
-    for role, content, attachments_json, citations_json, interrupted in rows:
-        item = {"role": role, "content": content}
+    for msg_id, role, content, attachments_json, citations_json, interrupted, feedback in rows:
+        item = {"id": msg_id, "role": role, "content": content}
         if interrupted:
             item["interrupted"] = True
+        if feedback is not None:
+            item["feedback"] = feedback
         if attachments_json:
             try:
                 item["attachments"] = json.loads(attachments_json)

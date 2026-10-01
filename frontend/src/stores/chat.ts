@@ -14,6 +14,8 @@ import {
 
 export interface AgentMessage {
   id: string
+  /** 数据库行 id：评分/编辑重发等消息级操作的定位键（UI2），流式中的本地种子还没有 */
+  dbId?: number
   role: 'user' | 'assistant' | 'system-notice'
   content: string
   toolName?: string | null
@@ -22,6 +24,8 @@ export interface AgentMessage {
   attachments?: UploadedAttachment[]
   citations?: AgentCitation[]
   interrupted?: boolean
+  /** 用户评分（UI2-⑤）：undefined=未评 */
+  feedback?: 1 | -1
 }
 
 export function formatToolName(toolName: string) {
@@ -52,6 +56,11 @@ export const useChatStore = defineStore('chat', () => {
   let messageIdSeed = 0
   // 加载令牌：切项目时丢弃迟到的历史响应
   let loadToken = 0
+  // UI2-⑥：生成中发送的消息进队列，本轮结束后自动发下一条。文本-only——
+  // 附件与“流中可传附件”是两回事，附件输入在流式期间被禁，队列只需带草稿文字。
+  const messageQueue = ref<{ id: string; message: string }[]>([])
+  // UI2-③：本轮回复完成后服务端补发的追问建议，新一轮发送/切项目时清空
+  const followUps = ref<string[]>([])
 
   const hasUploadedAttachments = computed(() => uploadedAttachments.value.length > 0)
 
@@ -113,6 +122,34 @@ export const useChatStore = defineStore('chat', () => {
     return true
   }
 
+  /**
+   * 编辑重发前的本地截断（UI2-②）：以指定 dbId 的 user 消息为界，
+   * 它本身及其后所有消息全部移除（镜像后端 truncate_from_message）。
+   * 与尾轮不同这里没有角色检查——编辑是显式删后续对话的用户自愿行为，
+   * 确认框已在 UI 层明示丢失数量。
+   */
+  function truncateForEdit(dbId: number): boolean {
+    const index = messages.value.findIndex((m) => m.dbId === dbId && m.role === 'user')
+    if (index < 0) return false
+    messages.value.slice(index).forEach((m) => m.attachments?.forEach(revokeAttachmentPreview))
+    messages.value = messages.value.slice(0, index)
+    return true
+  }
+
+  function enqueueMessage(message: string) {
+    messageQueue.value = [...messageQueue.value, { id: nextMessageId(), message }]
+  }
+
+  function dequeueMessage() {
+    const [head, ...rest] = messageQueue.value
+    messageQueue.value = rest
+    return head
+  }
+
+  function removeQueuedMessage(id: string) {
+    messageQueue.value = messageQueue.value.filter((item) => item.id !== id)
+  }
+
   function clearUploadedAttachments() {
     uploadedAttachments.value.forEach(revokeAttachmentPreview)
     uploadedAttachments.value = []
@@ -160,6 +197,8 @@ export const useChatStore = defineStore('chat', () => {
     activeToolName.value = ''
     thinkingSeconds.value = 0
     draft.value = ''
+    messageQueue.value = []
+    followUps.value = []
     clearUploadedAttachments()
     clearMessages()
   }
@@ -182,7 +221,13 @@ export const useChatStore = defineStore('chat', () => {
     isCurrentLoadToken,
     clearMessages,
     setMessagesFromHistory,
+    messageQueue,
+    followUps,
     truncateTailForRegenerate,
+    truncateForEdit,
+    enqueueMessage,
+    dequeueMessage,
+    removeQueuedMessage,
     clearUploadedAttachments,
     upsertUploadedAttachment,
     removeUploadedAttachment,

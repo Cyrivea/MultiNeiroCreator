@@ -26,7 +26,11 @@
         'has-attachment-dock': chatStore.hasUploadedAttachments,
       }"
     >
-      <MessageList @regenerate="handleRegenerate" />
+      <MessageList
+        @regenerate="handleRegenerate"
+        @edit="handleEdit"
+        @feedback="handleFeedback"
+      />
 
       <div v-if="chatStore.isSending" class="agent-status-line">
         <span class="agent-status-pulse" aria-hidden="true"></span>
@@ -41,7 +45,7 @@
     ></div>
 
     <div class="composer-wrap" :class="{ 'has-attachment-dock': chatStore.hasUploadedAttachments }">
-      <ChatComposer @send="handleSend" />
+      <ChatComposer @send="handleSend" @stop="handleStop" />
     </div>
   </div>
 </template>
@@ -50,7 +54,7 @@
 // 助手面板（D1 拆分第 10 步，todo §8.4）：组合消息列表与输入区，
 // 持有滚动容器，并实例化 useAgentChat 完成发送/加载流程。
 import { nextTick, ref, watch } from 'vue'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, type AgentMessage } from '@/stores/chat'
 import { useAgentChat } from '@/composables/useAgentChat'
 import MessageList from './MessageList.vue'
 import ChatComposer from './ChatComposer.vue'
@@ -65,14 +69,33 @@ async function scrollToBottom() {
   assistantBodyRef.value.scrollTop = assistantBodyRef.value.scrollHeight
 }
 
-const { sendMessage, loadHistory, regenerateLastMessage } = useAgentChat({ scrollToBottom })
+const {
+  sendMessage,
+  loadHistory,
+  regenerateLastMessage,
+  stopGenerating,
+  applyEditedMessage,
+  submitFeedback,
+} = useAgentChat({ scrollToBottom })
 
 function handleSend() {
   void sendMessage()
 }
 
+function handleStop() {
+  stopGenerating()
+}
+
 function handleRegenerate() {
   void regenerateLastMessage()
+}
+
+function handleEdit(payload: { message: AgentMessage; text: string }) {
+  void applyEditedMessage(payload.message, payload.text)
+}
+
+function handleFeedback(payload: { message: AgentMessage; value: 1 | -1 }) {
+  void submitFeedback(payload.message, payload.value)
 }
 
 // 历史被整体替换（加载 / done 重建）时保持滚动到底部

@@ -16,3 +16,10 @@ def _billing_mode_off(monkeypatch):
     """测试默认关闭计费门控：老的用例不应被“积分不足”拒绝；
     计费测试自己显式 monkeypatch 成 track/enforce。"""
     monkeypatch.setattr("core.config.BILLING_MODE", "off")
+
+
+@pytest.fixture(autouse=True)
+def _followups_off(monkeypatch):
+    """测试默认关闭追问建议（UI2-③）：它每轮多调一次模型，会打破存量用例的
+    「模型调用次数」断言。需要覆盖该功能的测试自己 monkeypatch 打开。"""
+    monkeypatch.setattr("core.config.FOLLOWUP_SUGGESTIONS_ENABLED", False)

@@ -97,12 +97,15 @@ def format_message_content_for_model(content: str, attachments: list[dict] | Non
 
 
 def _citation_from_hit(hit: dict, source_fallback: str) -> dict:
+    # UI2-④：摘录进引用载荷，前端悬停卡片直接展示，不用再请求后端
+    excerpt = (hit.get("content") or "").strip()
     return {
         "source": hit.get("source", source_fallback),
         "document_id": hit.get("document_id"),
         "chunk_index": int(hit.get("chunk_index", 0)),
         "chunk_count": int(hit.get("chunk_count", 0)),
         "distance": hit.get("distance"),
+        "excerpt": excerpt[:200],
     }
 
 
@@ -229,6 +232,11 @@ def assemble_messages(
             }
         )
         history_item: dict = {"role": role, "content": content}
+        # id/feedback 只进 clean_history（前端展示与 UI2 操作定位），不进发模型的 messages
+        if item.get("id") is not None:
+            history_item["id"] = item["id"]
+        if item.get("feedback") is not None:
+            history_item["feedback"] = item["feedback"]
         if normalized_history_attachments:
             history_item["attachments"] = normalized_history_attachments
         if item.get("citations"):

@@ -509,6 +509,16 @@ def _m014_project_panel_semantics(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE projects SET saved_at = COALESCE(saved_at, updated_at)")
 
 
+def _m015_add_message_feedback(conn: sqlite3.Connection) -> None:
+    """UI2-⑤：助手消息的用户有力度评分（1=👍 / -1=👎 / NULL=未评）。
+
+    和 usage_events 账本互补：usage 记「花了多少」，feedback 记「好不好」，
+    后续给 W2/C16 意图评测当标注语料时一条 SELECT 就够。"""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(messages)")]
+    if "feedback" not in cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN feedback INTEGER")
+
+
 MIGRATIONS: list[Migration] = [
     ("baseline: users/messages/projects + indexes", _m001_baseline),
     ("add foreign keys via table rebuild", _m002_add_foreign_keys),
@@ -524,6 +534,7 @@ MIGRATIONS: list[Migration] = [
     ("create assets ledger", _m012_create_assets),
     ("create billing core (prices/subscriptions/credits)", _m013_create_billing),
     ("project panel semantics: saved_at + discarded_at", _m014_project_panel_semantics),
+    ("add message user feedback", _m015_add_message_feedback),
 ]
 
 

@@ -3,7 +3,8 @@ from fastapi.responses import StreamingResponse
 
 from core.deps import verify_token
 from core.ratelimit import chat_rate_limit, enforce_upload_limits
-from schemas.chat import ChatRequest, ProfileRequest, RagDocumentDeleteRequest
+from repositories.chat_repo import set_feedback
+from schemas.chat import ChatRequest, FeedbackRequest, ProfileRequest, RagDocumentDeleteRequest
 from services.assistant_service import (
     clear_history,
     get_history,
@@ -28,6 +29,7 @@ async def chat(req: ChatRequest, user=Depends(chat_rate_limit)):
             req.project_id,
             [item.model_dump() for item in req.attachments],
             regenerate=req.regenerate,
+            edit_from_id=req.edit_from_id,
         ),
         media_type="text/event-stream",
     )
@@ -44,6 +46,17 @@ def get_profile_route(user=Depends(verify_token)):
     return {"profile": load_profile(user["id"])}
 
 
+
+
+@router.post("/feedback")
+def set_message_feedback(req: FeedbackRequest, user=Depends(verify_token)):
+    """UI2-⑤：有用/没用评分。value=0 视同清除（落 NULL，保持列语义三态）。"""
+    if req.message_id <= 0:
+        raise HTTPException(status_code=422, detail="message_id 必须为正整数")
+    ok = set_feedback(user["id"], req.message_id, req.value if req.value != 0 else None)
+    if not ok:
+        raise HTTPException(status_code=404, detail="消息不存在或不属于当前账号")
+    return {"status": "success"}
 
 
 @router.get("/history")

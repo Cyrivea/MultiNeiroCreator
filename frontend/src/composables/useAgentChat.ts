@@ -7,6 +7,7 @@ import { onBeforeUnmount } from 'vue'
 import { ElMessage } from '@/utils/toast'
 import {
   getAgentHistory,
+  sendMessageFeedback,
   streamAgentChat,
   uploadAgentDocument,
   waitForAgentJob,
@@ -85,11 +86,14 @@ export function useAgentChat(options: UseAgentChatOptions) {
   function hydrateHistoryItem(item: AgentHistoryItem): AgentMessage {
     return {
       id: chatStore.nextMessageId(),
+      // mock/旧事件里可能没有数值 id（null/undefined 都归一为 undefined）
+      dbId: typeof item.id === 'number' ? item.id : undefined,
       role: item.role,
       content: item.content,
       attachments: item.attachments?.map(hydrateAttachmentFromPayload),
       citations: item.citations,
       interrupted: item.interrupted,
+      feedback: item.feedback === 1 || item.feedback === -1 ? item.feedback : undefined,
     }
   }
 
@@ -111,19 +115,30 @@ export function useAgentChat(options: UseAgentChatOptions) {
     overrideMessage?: string
     /** 重生成模式：后端截断数据库尾轮，前端镜像截断，不重复插用户气泡 */
     regenerate?: boolean
+    /** 编辑重发（UI2-②）：与 regenerate 互斥；本地截断已在 applyEditedMessage 做完 */
+    editFromId?: number
   }
 
   async function sendMessage(sendOptions?: SendOptions) {
     const regenerate = sendOptions?.regenerate === true
+    const editFromId = sendOptions?.editFromId
     const message = (sendOptions?.overrideMessage ?? chatStore.draft).trim()
-    const pendingAttachments = regenerate ? [] : [...chatStore.uploadedAttachments]
-    if (
-      (!message && !pendingAttachments.length) ||
-      chatStore.isSending ||
-      chatStore.isUploadingAttachment
-    ) {
+    const pendingAttachments = regenerate || editFromId ? [] : [...chatStore.uploadedAttachments]
+    if (!message && !pendingAttachments.length) {
       return
     }
+    if (chatStore.isSending || chatStore.isUploadingAttachment) {
+      // UI2-⑥：生成中发送进队列，本轮结束后自动发。带附件的消息暂不支持排队
+      //（附件需随发送时上传到当轮工程，流式期间上传窗口是关闭的）
+      if (!regenerate && !editFromId && message && !pendingAttachments.length) {
+        chatStore.enqueueMessage(message)
+        chatStore.draft = ''
+        chatStore.followUps = []
+      }
+      return
+    }
+    // 新一轮提问生效，上一轮的追问建议使命结束
+    chatStore.followUps = []
 
     const attachmentPayloads: AgentAttachmentItem[] = []
     if (pendingAttachments.length) {
@@ -221,6 +236,7 @@ export function useAgentChat(options: UseAgentChatOptions) {
           project_id: projectStore.id,
           attachments: attachmentPayloads,
           ...(regenerate ? { regenerate: true } : {}),
+          ...(editFromId ? { edit_from_id: editFromId } : {}),
         },
         {
           onTool(event) {
@@ -252,6 +268,12 @@ export function useAgentChat(options: UseAgentChatOptions) {
             chatStore.setMessagesFromHistory(event.history, hydrateHistoryItem)
             void options.scrollToBottom()
           },
+          onSuggestions(event) {
+            // UI2-③：追问建议在 done 后到达，只在流未被中止时采纳
+            if (controller.signal.aborted) return
+            chatStore.followUps = event.items
+            void options.scrollToBottom()
+          },
         },
         controller.signal,
       )
@@ -260,6 +282,20 @@ export function useAgentChat(options: UseAgentChatOptions) {
 
       // 切换项目导致的取消：直接静默返回，消息列表随新项目历史重建（§8.3）
       if (controller.signal.aborted && controller.signal.reason === 'PROJECT_SWITCH') {
+        return
+      }
+
+      // UI2-①：用户主动停止。已上屏的部分保留 + interrupted 标记；
+      // 后端在断连兜底里会把半截回复落库（CA 有档可查），前端不打红色错误。
+      if (controller.signal.aborted && controller.signal.reason === 'USER_STOP') {
+        assistantMessage.isPending = false
+        assistantMessage.interrupted = true
+        assistantMessage.toolName = null
+        if (!assistantMessage.content) {
+          assistantMessage.content = '（已停止生成，本轮没有留下内容）'
+        }
+        clearStreamIdleTimeout()
+        await options.scrollToBottom()
         return
       }
 
@@ -295,12 +331,57 @@ export function useAgentChat(options: UseAgentChatOptions) {
       if (chatStore.abortController === controller) {
         chatStore.abortController = null
       }
+      // UI2-⑥：本轮收尾后自动发队列里的下一条（含主动停止的情况——停止停的是
+      // 当前回复，不是拦着排队消息不许发）；切项目时队列已随 reset 清空。
+      const queued = chatStore.dequeueMessage()
+      if (queued) {
+        void sendMessage({ overrideMessage: queued.message })
+      }
     }
   }
 
   onBeforeUnmount(() => {
     stopThinking()
   })
+
+  /** UI2-①：主动停止当前一轮生成（后端断连兜底会把半截回复落库带标） */
+  function stopGenerating() {
+    chatStore.abortActiveStream('USER_STOP')
+  }
+
+  /** UI2-②：编辑一条历史 user 消息并重发。本地先镜像截断，后端按 id 截库双保险。 */
+  async function applyEditedMessage(original: AgentMessage, newText: string) {
+    const text = newText.trim()
+    if (!text || chatStore.isSending || chatStore.isUploadingAttachment) return
+    if (original.dbId == null) {
+      ElMessage.warning('这条消息还没入库，暂时不能编辑')
+      return
+    }
+    if (original.content.trim() === text) {
+      ElMessage.info('内容没有变化')
+      return
+    }
+    if (!chatStore.truncateForEdit(original.dbId)) {
+      ElMessage.warning('这条消息已变化，请刷新后重试')
+      return
+    }
+    await sendMessage({ overrideMessage: text, editFromId: original.dbId })
+  }
+
+  /** UI2-⑤：评分三态——点已有评分=取消，点另一个=切换 */
+  async function submitFeedback(message: AgentMessage, value: 1 | -1) {
+    if (message.dbId == null) {
+      ElMessage.warning('这条回复还没入库，稍后再试')
+      return
+    }
+    const next = message.feedback === value ? 0 : value
+    try {
+      await sendMessageFeedback(message.dbId, next)
+      message.feedback = next === 0 ? undefined : next
+    } catch {
+      ElMessage.error('评分失败，请稍后重试')
+    }
+  }
 
   /** 重新生成最新一轮回复（open-webui 消息操作栏设计）：取最后一条用户消息原文重发 */
   async function regenerateLastMessage() {
@@ -324,5 +405,8 @@ export function useAgentChat(options: UseAgentChatOptions) {
     sendMessage,
     loadHistory,
     regenerateLastMessage,
+    stopGenerating,
+    applyEditedMessage,
+    submitFeedback,
   }
 }

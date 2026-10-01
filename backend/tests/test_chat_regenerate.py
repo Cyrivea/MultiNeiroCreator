@@ -26,7 +26,8 @@ CREATE TABLE messages (
     content TEXT NOT NULL,
     attachments_json TEXT,
     citations_json TEXT,
-    interrupted INTEGER DEFAULT 0
+    interrupted INTEGER DEFAULT 0,
+    feedback INTEGER
 )
 """
 

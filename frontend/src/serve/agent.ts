@@ -15,15 +15,21 @@ export interface AgentCitation {
   chunk_index: number
   chunk_count: number
   distance: number | null
+  /** UI2-④：召回片段摘录，悬停卡片直接在本地展示，不再请求后端 */
+  excerpt?: string
 }
 
 export interface AgentHistoryItem {
+  /** 数据库行 id：评分/编辑重发等消息级操作的定位键（UI2） */
+  id?: number
   role: 'user' | 'assistant' | 'system-notice'
   content: string
   attachments?: AgentAttachmentItem[]
   citations?: AgentCitation[]
   /** 服务端标记：该消息生成中途被断开（上游/客户端中断），可与完整消息区别展示 */
   interrupted?: boolean
+  /** UI2-⑤：用户评分（1=👍 / -1=👎），未评不出该键 */
+  feedback?: number
 }
 
 export interface AgentChatPayload {
@@ -33,6 +39,8 @@ export interface AgentChatPayload {
   attachments?: AgentAttachmentItem[]
   /** 重生成模式（UI1）：后端先截断数据库里上一轮问答尾，再按本次 message 重新落库，防历史重复堆叠 */
   regenerate?: boolean
+  /** 编辑重发（UI2-②）：与 regenerate 互斥，后端从该 user 消息 id 起截断整条尾巴后重发 */
+  edit_from_id?: number
 }
 
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
@@ -166,14 +174,25 @@ export interface AgentWorkflowSnapshotEvent {
   snapshot: unknown
 }
 
+/** UI2-③：done 之后到达的追问建议，独立事件不阻塞正文上屏 */
+export interface AgentSuggestionsEvent {
+  type: 'suggestions'
+  items: string[]
+}
+
 type AgentStreamEvent =
-  AgentToolEvent | AgentContentEvent | AgentDoneEvent | AgentWorkflowSnapshotEvent
+  | AgentToolEvent
+  | AgentContentEvent
+  | AgentDoneEvent
+  | AgentWorkflowSnapshotEvent
+  | AgentSuggestionsEvent
 
 interface AgentStreamHandlers {
   onTool?: (event: AgentToolEvent) => void
   onContent?: (event: AgentContentEvent) => void
   onDone?: (event: AgentDoneEvent) => void
   onWorkflowSnapshot?: (event: AgentWorkflowSnapshotEvent) => void
+  onSuggestions?: (event: AgentSuggestionsEvent) => void
 }
 
 // 解析单个 SSE 块并分发事件。单行损坏（坏 JSON / 未知类型）只丢弃该行，
@@ -198,6 +217,7 @@ function dispatchSseBlock(block: string, handlers: AgentStreamHandlers) {
   else if (event.type === 'content') handlers.onContent?.(event)
   else if (event.type === 'done') handlers.onDone?.(event)
   else if (event.type === 'workflow_snapshot') handlers.onWorkflowSnapshot?.(event)
+  else if (event.type === 'suggestions') handlers.onSuggestions?.(event)
   else console.warn('[SSE] 忽略未知事件类型:', (event as { type?: string }).type)
 }
 
@@ -265,4 +285,12 @@ export async function streamAgentChat(
   if (!buffer.trim()) return
 
   dispatchSseBlock(buffer, handlers)
+}
+
+/** UI2-⑤：消息评分（1=👍 / -1=👎 / 0=清除） */
+export async function sendMessageFeedback(messageId: number, value: 1 | -1 | 0) {
+  return request.post<unknown, { status: string }>('/feedback', {
+    message_id: messageId,
+    value,
+  })
 }

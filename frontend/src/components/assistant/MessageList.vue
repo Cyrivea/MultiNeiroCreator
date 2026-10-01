@@ -56,12 +56,63 @@
           <template v-else>
             <!-- 用户消息保持纯文本；助手消息走 Markdown 消毒管线（UI1） -->
             <MarkdownBlock v-if="message.role === 'assistant'" :content="message.content" />
+            <!-- UI2-②：编辑模式原位替换气泡，警告语句在行内提示量级 -->
+            <div v-else-if="editingMessageId === message.id" class="agent-edit-box">
+              <textarea
+                v-model="editingDraft"
+                class="agent-edit-textarea"
+                rows="3"
+                @keydown="handleEditKeydown"
+              ></textarea>
+              <div v-if="editTailCount > 0" class="agent-edit-warning">
+                保存并重新发送会删除这条消息之后的 {{ editTailCount }} 条对话（不可撤销）
+              </div>
+              <div class="agent-edit-actions">
+                <button type="button" class="agent-edit-btn is-ghost" @click="cancelEdit">
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="agent-edit-btn is-primary"
+                  :disabled="!editingDraft.trim()"
+                  @click="confirmEdit(message)"
+                >
+                  保存并重新发送
+                </button>
+              </div>
+            </div>
             <template v-else>{{ message.content }}</template>
           </template>
           <span v-if="message.interrupted" class="agent-interrupted-mark" title="生成中途被断开">
             （回复被中断，内容不完整）
           </span>
         </div>
+        <!-- UI2-②：用户消息 hover 浮出编辑按钮 -->
+        <div
+          v-if="message.role === 'user' && !chatStore.isSending && editingMessageId !== message.id"
+          class="agent-message-actions is-user-actions"
+        >
+          <button
+            type="button"
+            class="agent-action-btn"
+            title="编辑并重发"
+            @click="startEdit(message)"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+          </button>
+        </div>
+        <!-- UI2-④：引用（悬停出摘要卡片）-->
         <div v-if="message.citations?.length" class="agent-message-citations">
           <div class="agent-citation-title">引用来源</div>
           <div
@@ -69,6 +120,16 @@
             :key="`${message.id}-citation-${citation.document_id || citation.source}-${citation.chunk_index}-${index}`"
             class="agent-citation-item"
           >
+            <!-- UI2-④：悬停预览卡片（有摘录才渲染，老数据没有 excerpt 就退化回列表项） -->
+            <div v-if="citation.excerpt" class="agent-citation-pop" role="tooltip">
+              <div class="agent-citation-pop-excerpt">{{ citation.excerpt }}</div>
+              <div class="agent-citation-pop-meta">
+                片段 {{ citation.chunk_index + 1 }}/{{ citation.chunk_count }}<template
+                  v-if="citation.distance != null"
+                  > · 相似距离 {{ citation.distance.toFixed(3) }}</template
+                >
+              </div>
+            </div>
             <span class="agent-citation-source">{{ citation.source }}</span>
             <span>· 片段 {{ citation.chunk_index + 1 }}</span>
           </div>
@@ -131,6 +192,51 @@
               <path d="M21 10a9 9 0 1 1-2.64-6.36L21 6.5"/>
             </svg>
           </button>
+          <!-- UI2-⑤：有用/没用；再点一次同按钮=取消评分 -->
+          <button
+            type="button"
+            class="agent-action-btn"
+            :class="{ 'is-active': message.feedback === 1 }"
+            title="有用"
+            @click="emit('feedback', { message, value: 1 })"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M7 10v11" />
+              <path
+                d="M15 5.9 14 10h5.4a2 2 0 0 1 2 2.4l-1.5 7A2 2 0 0 1 18 21H7V10l4.2-6.1a1.6 1.6 0 0 1 2.8.4l1 1.6Z"
+              />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="agent-action-btn"
+            :class="{ 'is-active': message.feedback === -1 }"
+            title="没用"
+            @click="emit('feedback', { message, value: -1 })"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M17 14V3" />
+              <path
+                d="M9 18.1 10 14H4.6a2 2 0 0 1-2-2.4l1.5-7A2 2 0 0 1 6 3h11v11l-4.2 6.1a1.6 1.6 0 0 1-2.8-.4l-1-1.6Z"
+              />
+            </svg>
+          </button>
         </div>
         <div v-if="message.attachments?.length" class="agent-message-attachments">
           <article
@@ -158,6 +264,24 @@
       </div>
     </template>
   </TransitionGroup>
+
+  <!-- UI2-③：追问建议（done 后服务端补发），点击填入草稿，手动发送前可调 -->
+  <div
+    v-if="chatStore.followUps.length && !chatStore.isSending"
+    class="agent-followups"
+    role="list"
+  >
+    <button
+      v-for="followUp in chatStore.followUps"
+      :key="followUp"
+      type="button"
+      class="agent-followup-chip"
+      role="listitem"
+      @click="applyFollowUp(followUp)"
+    >
+      {{ followUp }}
+    </button>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -167,12 +291,57 @@ import { ElMessage } from '@/utils/toast'
 import { formatToolName, useChatStore, type AgentMessage } from '@/stores/chat'
 import MarkdownBlock from './MarkdownBlock.vue'
 
-const emit = defineEmits<{ (e: 'regenerate'): void }>()
+const emit = defineEmits<{
+  (e: 'regenerate'): void
+  (e: 'edit', payload: { message: AgentMessage; text: string }): void
+  (e: 'feedback', payload: { message: AgentMessage; value: 1 | -1 }): void
+}>()
 
 const chatStore = useChatStore()
 const thinkingLetters = 'THINKING'.split('')
 const copiedMessageId = ref<string | null>(null)
 let copiedTimer: number | null = null
+
+// UI2-②：编辑原位展开态
+const editingMessageId = ref<string | null>(null)
+const editingDraft = ref('')
+const editTailCount = computed(() => {
+  if (!editingMessageId.value) return 0
+  const index = chatStore.messages.findIndex((m) => m.id === editingMessageId.value)
+  return index < 0 ? 0 : chatStore.messages.length - index - 1
+})
+
+function startEdit(message: AgentMessage) {
+  editingMessageId.value = message.id
+  editingDraft.value = message.content
+}
+
+function cancelEdit() {
+  editingMessageId.value = null
+  editingDraft.value = ''
+}
+
+function confirmEdit(message: AgentMessage) {
+  const text = editingDraft.value.trim()
+  if (!text) return
+  emit('edit', { message, text })
+  cancelEdit()
+}
+
+function handleEditKeydown(event: KeyboardEvent) {
+  if (event.isComposing) return
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    const message = chatStore.messages.find((m) => m.id === editingMessageId.value)
+    if (message) confirmEdit(message)
+  }
+  if (event.key === 'Escape') cancelEdit()
+}
+
+function applyFollowUp(text: string) {
+  chatStore.draft = text
+  chatStore.followUps = []
+}
 
 // 空状态建议词条：借机把三大 Block 的生产能力前置到第一屏（open-webui Suggestions 设计）
 const emptySuggestions = [
@@ -398,6 +567,138 @@ const visibleMessages = computed(() =>
     opacity 160ms ease,
     transform 160ms ease;
   pointer-events: none;
+}
+
+/* UI2：用户消息的操作栏靠右对齐 */
+.agent-message-actions.is-user-actions {
+  justify-content: flex-end;
+}
+
+/* UI2-⑤：已选中的评分保持常亮 */
+.agent-action-btn.is-active {
+  color: rgb(142, 197, 255);
+  background: rgba(122, 162, 255, 0.14);
+}
+
+/* UI2-②：原位编辑框 */
+.agent-edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.agent-edit-textarea {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  border: 1px solid rgba(122, 162, 255, 0.32);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  outline: none;
+}
+
+.agent-edit-warning {
+  font-size: 12px;
+  color: rgb(240, 183, 120);
+}
+
+.agent-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.agent-edit-btn {
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.agent-edit-btn.is-ghost {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.agent-edit-btn.is-ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.agent-edit-btn.is-primary {
+  color: #10131c;
+  background: rgb(158, 188, 255);
+}
+
+.agent-edit-btn.is-primary:disabled {
+  opacity: 0.5;
+}
+
+/* UI2-④：引用悬停预览卡片 */
+.agent-citation-item {
+  position: relative;
+}
+
+.agent-citation-pop {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: min(320px, 80vw);
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(18, 20, 30, 0.96);
+  border: 1px solid rgba(122, 162, 255, 0.22);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4);
+}
+
+.agent-citation-item:hover .agent-citation-pop,
+.agent-citation-item:focus-within .agent-citation-pop {
+  display: block;
+}
+
+.agent-citation-pop-excerpt {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.agent-citation-pop-meta {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* UI2-③：追问建议 chips */
+.agent-followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.agent-followup-chip {
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: rgb(158, 188, 255);
+  background: rgba(122, 162, 255, 0.1);
+  border: 1px solid rgba(122, 162, 255, 0.22);
+  cursor: pointer;
+  transition: background 160ms ease;
+  text-align: left;
+}
+
+.agent-followup-chip:hover {
+  background: rgba(122, 162, 255, 0.2);
 }
 
 .agent-message:hover .agent-message-actions,
