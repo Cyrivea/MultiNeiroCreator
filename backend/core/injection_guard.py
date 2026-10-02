@@ -94,16 +94,27 @@ def _get_injection_embeddings() -> list[list[float]]:
 _LEGIT_RESET = re.compile(r"(?:重来|不做|不要|丢到|重来|换个|这个不要|重做|重新来|清空后重来|重新|重新开始|从零开始)")
 
 
-def scan_semantic_injection(message: str, threshold: float = 0.62) -> dict[str, Any]:
-    """bge-m3 语义指纹近似：正则没挡住的换种说法也能容易被找到。"""
+def scan_semantic_injection(message: str, threshold: float | None = None) -> dict[str, Any]:
+    """bge-m3 语义指纹近似：正则没挡住的换种说法也能容易被找到。
+
+    C25 定标（2026-10-03）：阈值与最短长度从 config 读，
+    短文本直接跳过——装不下注入载荷，也压不住 embedding 噪声。"""
+    from core import config
+
+    if threshold is None:
+        threshold = config.INJECTION_SEMANTIC_THRESHOLD
+
+    if not message.strip():
+        return {"is_suspicious": False, "similarity": 0.0}
+
+    if len(message.strip()) < config.INJECTION_SEMANTIC_MIN_CHARS:
+        return {"is_suspicious": False, "similarity": 0.0, "skipped": "too_short"}
+
     from services.rag.embedding import get_embedding
 
     # 注入本身才查语义；论点带“重来”这种基础合法话术先去排除
     if _LEGIT_RESET.search(message) and any(k in message for k in ("清空", "重来", "重做", "换个", "删掉")):
         return {"is_suspicious": False, "similarity": 0.0, "skipped": "legit_reset_phrase"}
-
-    if not message.strip():
-        return {"is_suspicious": False, "similarity": 0.0}
 
     embeddings = _get_injection_embeddings()
     if not embeddings:

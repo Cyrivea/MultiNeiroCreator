@@ -89,6 +89,13 @@ FOLLOWUP_SUGGESTIONS_ENABLED = (
     os.getenv("FOLLOWUP_SUGGESTIONS_ENABLED", "on").strip().lower() != "off"
 )
 
+# ===== 注入语义层（C25 定标，2026-10-03 实测数据见 solved.md 第 108 条）=====
+# bge-m3 上良性短句能冲到 0.681、真注入最低 0.749，旧阈值 0.62 正好压在良性段中间。
+# 校准后取 0.72（良性尾部与攻击头部之间 0.068 空隙内，双侧留交量）；
+# 短于 8 个字符的文本不烧语义层——那么短要么正则先行命中，要么装不下注入载荷。
+INJECTION_SEMANTIC_THRESHOLD = float(os.getenv("INJECTION_SEMANTIC_THRESHOLD", "0.72"))
+INJECTION_SEMANTIC_MIN_CHARS = int(os.getenv("INJECTION_SEMANTIC_MIN_CHARS", "8"))
+
 # ===== 计费（商业化阶段 1，《计费与商业化方案.md》）=====
 # off=完全不接入 billing；track=记帐（预占+结算流水）但积分不足不拒绝（试验盘数据用）；
 # enforce=积分不足在上游调用前拒绝（不按负不留坏账）。默认 off 保证测试/开发环境稳定。
