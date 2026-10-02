@@ -35,6 +35,7 @@
     </Transition>
     <!-- UI2 第二批①：输入框直接粘贴图片进附件位 -->
     <textarea
+      ref="composerTextareaRef"
       v-model="chatStore.draft"
       placeholder="我来帮你实现想法！"
       @keydown="handleComposerKeydown"
@@ -127,7 +128,7 @@
 <script setup lang="ts">
 // 输入区（D1 拆分第 9 步，todo §8.4）：草稿 v-model 到 chat store、
 // 附件选择、模型菜单；发送动作通过事件上抛给 AssistantPanel。
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from '@/utils/toast'
 import { ATTACHMENT_ACCEPT_EXTENSIONS } from '@/utils/attachment'
 import { useChatStore } from '@/stores/chat'
@@ -151,6 +152,33 @@ const chatStore = useChatStore()
 
 const attachmentInputRef = ref<HTMLInputElement | null>(null)
 const modelMenuRef = ref<HTMLElement | null>(null)
+const composerTextareaRef = ref<HTMLTextAreaElement | null>(null)
+
+// UI2 第二批③：输入框随内容长高（open-webui 行为）。120px 起步、顶到 40vh 后内部滚动，
+// 防止长草稿把整个面板挤爆。CSS 里 min-height 对应 MIN、max-height 对应 MAX，这两处要同步。
+const COMPOSER_MIN_HEIGHT = 120
+const COMPOSER_MAX_HEIGHT_RATIO = 0.4
+
+function autoGrowComposer() {
+  const el = composerTextareaRef.value
+  if (!el) return
+  const max = Math.round(window.innerHeight * COMPOSER_MAX_HEIGHT_RATIO)
+  el.style.height = 'auto' // 先塌回 auto 才能量出真实内容高度（缩小亦然）
+  const next = Math.min(Math.max(el.scrollHeight, COMPOSER_MIN_HEIGHT), max)
+  el.style.height = `${next}px`
+  el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden'
+}
+
+watch(
+  () => chatStore.draft,
+  () => {
+    void nextTick(autoGrowComposer)
+  },
+)
+
+// 窗口变高/矮后重算 40vh 上限（工作站拖窗口是常态）
+onMounted(() => window.addEventListener('resize', autoGrowComposer))
+onBeforeUnmount(() => window.removeEventListener('resize', autoGrowComposer))
 // accept 与白名单同一个源（UI2 第二批：选块器/粘贴/拖拽共用同一份格式门禁）
 const attachmentAcceptAttr = computed(() =>
   (ATTACHMENT_ACCEPT_EXTENSIONS as readonly string[]).map((ext) => `.${ext}`).join(','),
@@ -261,6 +289,8 @@ onBeforeUnmount(() => {
 
 .input-composer textarea {
   min-height: 120px;
+  /* UI2 第三批③：长高由 autoGrowComposer 定量控制，这里只保留初始态 */
+  overflow-y: hidden;
   border: 0;
   outline: 0;
   resize: none;
