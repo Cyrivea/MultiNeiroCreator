@@ -185,6 +185,14 @@
     <SettingsPanel :open="isSettingsOpen" @close="isSettingsOpen = false" />
     <BillingPanel :open="isBillingOpen" @close="isBillingOpen = false" />
 
+    <!-- UI2 第二批④：⌘K/Ctrl+K 命令面板 -->
+    <CommandPalette
+      :open="isPaletteOpen"
+      :commands="paletteCommands"
+      @close="isPaletteOpen = false"
+      @select="handlePaletteSelect"
+    />
+
     <CreateProjectDialog
       :open="isCreateProjectModalOpen"
       @close="isCreateProjectModalOpen = false"
@@ -238,7 +246,7 @@
 // 入口初始化（路由项目 id -> 服务端详情 -> store）、项目打开/新建/切换导航、
 // 保存模式切换、登出。项目/会话状态在 Pinia（stores/project.ts、stores/chat.ts），
 // 具体交互在 components/project/*、components/assistant/* 与 composables/*。
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from '@/utils/toast'
@@ -264,6 +272,8 @@ import {
 } from '@/utils/localProject'
 import ProjectSwitcher from '@/components/project/ProjectSwitcher.vue'
 import CreateProjectDialog from '@/components/project/CreateProjectDialog.vue'
+import CommandPalette from '@/components/palette/CommandPalette.vue'
+import type { PaletteCommand } from '@/utils/palette'
 import AssistantPanel from '@/components/assistant/AssistantPanel.vue'
 import CreativeToolPicker from '@/components/creative/CreativeToolPicker.vue'
 import CreativeToolPanel from '@/components/creative/CreativeToolPanel.vue'
@@ -297,6 +307,79 @@ const isToolModalOpen = ref(false)
 const isSettingsOpen = ref(false)
 const isBillingOpen = ref(false)
 const isAssistantCollapsed = ref(false)
+
+// UI2 第二批④：命令面板（⌘K/Ctrl+K）。命令走注册表，新增功能 = 加一条命令项。
+const isPaletteOpen = ref(false)
+
+const paletteCommands = computed<PaletteCommand[]>(() => [
+  {
+    id: 'focus-composer',
+    title: '聚焦智能助手输入框',
+    keywords: ['focus', 'input', 'shuru', 'ruku'],
+  },
+  {
+    id: 'toggle-assistant',
+    title: isAssistantCollapsed.value ? '展开智能助手面板' : '收起智能助手面板',
+    keywords: ['assistant', 'zhushou', 'toggle'],
+  },
+  {
+    id: 'new-project',
+    title: '新建项目',
+    meta: '创建一个新的工程文件并进入新工作站',
+    keywords: ['new', 'project', 'xinjian'],
+  },
+  {
+    id: 'open-project',
+    title: '选择项目打开',
+    meta: '从本地工程列表继续创作',
+    keywords: ['open', 'project', 'dakai'],
+  },
+  {
+    id: 'billing',
+    title: 'Billing 面板',
+    meta: '查看额度与用量',
+    keywords: ['billing', 'zhangdan', '账单'],
+  },
+  {
+    id: 'settings',
+    title: 'Settings 面板',
+    keywords: ['settings', 'shezhi', '设置'],
+  },
+])
+
+function handleGlobalKeydown(event: KeyboardEvent) {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault()
+    isPaletteOpen.value = !isPaletteOpen.value
+  }
+}
+
+async function handlePaletteSelect(command: PaletteCommand) {
+  switch (command.id) {
+    case 'focus-composer':
+      if (isAssistantCollapsed.value) {
+        isAssistantCollapsed.value = false
+        await nextTick()
+      }
+      document.querySelector<HTMLTextAreaElement>('.input-composer textarea')?.focus()
+      break
+    case 'toggle-assistant':
+      isAssistantCollapsed.value = !isAssistantCollapsed.value
+      break
+    case 'new-project':
+      openCreateProjectDialog()
+      break
+    case 'open-project':
+      void handleOpenProjectPicker()
+      break
+    case 'billing':
+      isBillingOpen.value = true
+      break
+    case 'settings':
+      isSettingsOpen.value = true
+      break
+  }
+}
 const isSaveModeOpen = ref(false)
 const isSaveModeApplying = ref(false)
 const isCreateProjectModalOpen = ref(false)
@@ -598,6 +681,7 @@ function handleBeforeUnload(event: BeforeUnloadEvent) {
 onMounted(() => {
   taskStore.startPolling(projectId)
   document.addEventListener('click', handleDocumentClick)
+  window.addEventListener('keydown', handleGlobalKeydown)
   window.addEventListener(JOB_TERMINAL_EVENT, handleJobTerminal)
   window.addEventListener('beforeunload', handleBeforeUnload)
   void initializeWorkspaceFromEntryPoint()
@@ -606,6 +690,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   taskStore.stopPolling()
   document.removeEventListener('click', handleDocumentClick)
+  window.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener(JOB_TERMINAL_EVENT, handleJobTerminal)
   window.removeEventListener('beforeunload', handleBeforeUnload)
 })

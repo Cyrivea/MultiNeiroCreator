@@ -15,6 +15,7 @@ declare module 'vue' {
     AttachmentDock: typeof import('./../components/assistant/AttachmentDock.vue')['default']
     BillingPanel: typeof import('./../components/billing/BillingPanel.vue')['default']
     ChatComposer: typeof import('./../components/assistant/ChatComposer.vue')['default']
+    CommandPalette: typeof import('./../components/palette/CommandPalette.vue')['default']
     CreateProjectDialog: typeof import('./../components/project/CreateProjectDialog.vue')['default']
     CreativeToolPanel: typeof import('./../components/creative/CreativeToolPanel.vue')['default']
     CreativeToolPicker: typeof import('./../components/creative/CreativeToolPicker.vue')['default']
