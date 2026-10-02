@@ -37,6 +37,7 @@
         'has-floating-composer': true,
         'has-attachment-dock': chatStore.hasUploadedAttachments,
       }"
+      @scroll="handleBodyScroll"
     >
       <MessageList
         @regenerate="handleRegenerate"
@@ -55,6 +56,19 @@
       :class="{ 'has-attachment-dock': chatStore.hasUploadedAttachments }"
       aria-hidden="true"
     ></div>
+
+    <!-- UI2 第二批⑤：离开底部足够远时浮沉一个回底按钮（open-webui 设计） -->
+    <Transition name="panel-float">
+      <button
+        v-if="scrolledAwayFromBottom"
+        type="button"
+        class="agent-back-to-bottom"
+        title="回到最新消息"
+        @click="scrollToBottom"
+      >
+        ↓ 回到底部
+      </button>
+    </Transition>
 
     <div class="composer-wrap" :class="{ 'has-attachment-dock': chatStore.hasUploadedAttachments }">
       <ChatComposer @send="handleSend" @stop="handleStop" @attach="handleAttach" />
@@ -79,6 +93,15 @@ async function scrollToBottom() {
   await nextTick()
   if (!assistantBodyRef.value) return
   assistantBodyRef.value.scrollTop = assistantBodyRef.value.scrollHeight
+}
+
+// UI2 第二批⑤：距底阈超过 80px 才认为“离开了底部”
+const scrolledAwayFromBottom = ref(false)
+
+function handleBodyScroll() {
+  const el = assistantBodyRef.value
+  if (!el) return
+  scrolledAwayFromBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight > 80
 }
 
 const {
@@ -157,6 +180,26 @@ defineExpose({ loadHistory, scrollToBottom })
 </script>
 
 <style scoped>
+/* UI2 第二批⑤：回底浮沉按钮 */
+.agent-back-to-bottom {
+  position: absolute;
+  right: 18px;
+  bottom: 150px; /* 浮在 composer 上方，不挡文字 */
+  z-index: 30;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: rgb(190, 208, 255);
+  background: rgba(24, 28, 44, 0.94);
+  border: 1px solid rgba(122, 162, 255, 0.3);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.agent-back-to-bottom:hover {
+  background: rgba(36, 42, 64, 0.96);
+}
+
 /* UI2 第二批②：拖拽覆盖层 */
 .assistant-drop-overlay {
   position: absolute;
