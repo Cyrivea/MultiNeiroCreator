@@ -115,6 +115,25 @@ export function buildUploadedAttachment(file: File): UploadedAttachment {
   }
 }
 
+/**
+ * 粘贴/拖拽来源的文件改名（UI2 第二批①②）：剪贴板图片的名字是无意义的
+ * “image.png”/"blob"，两个连续粘贴会同名打架；统一改成 `pasted-时间戳-随机串.扩展名`。
+ * 已有正常名字的文件（拖拽本地文件）原样返回。
+ */
+export function renamePastedFile(file: File, now: Date = new Date()): File {
+  const generic = !file.name || file.name === 'blob' || /^image\.[a-z0-9]+$/i.test(file.name)
+  if (!generic) return file
+  const fromMime = file.type.split('/')[1]?.replace('jpeg', 'jpg') || ''
+  const extension = getAttachmentExtension(file.name) || fromMime || 'bin'
+  const stamp = now
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace('T', '-')
+    .slice(0, 15)
+  const rand = Math.random().toString(36).slice(2, 6)
+  return new File([file], `pasted-${stamp}-${rand}.${extension}`, { type: file.type })
+}
+
 /** 发送消息时给消息列表克隆一份附件展示对象（图片附件生成独立 blob 预览） */
 export function cloneAttachmentForMessage(attachment: UploadedAttachment): UploadedAttachment {
   return {

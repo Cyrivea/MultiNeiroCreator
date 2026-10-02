@@ -33,10 +33,12 @@
         </div>
       </div>
     </Transition>
+    <!-- UI2 第二批①：输入框直接粘贴图片进附件位 -->
     <textarea
       v-model="chatStore.draft"
       placeholder="我来帮你实现想法！"
       @keydown="handleComposerKeydown"
+      @paste="handlePaste"
     ></textarea>
     <div class="input-composer-toolbar">
       <div class="composer-toolbar-left">
@@ -127,6 +129,7 @@
 // 附件选择、模型菜单；发送动作通过事件上抛给 AssistantPanel。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from '@/utils/toast'
+import { renamePastedFile } from '@/utils/attachment'
 import { useChatStore } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
 import AttachmentDock from './AttachmentDock.vue'
@@ -168,6 +171,20 @@ function selectModel(option: ModelOption) {
   chatStore.selectedModel = option.value
   isModelMenuOpen.value = false
   ElMessage.success(`已切换为 ${option.label}`)
+}
+
+/** UI2 第二批①：剪贴板有文件（截图/复制的图片）就进附件位；纯文本粘贴不拦截 */
+function handlePaste(event: ClipboardEvent) {
+  const files = Array.from(event.clipboardData?.files ?? [])
+  if (!files.length) return
+  event.preventDefault()
+  if (projectStore.id == null) {
+    ElMessage.warning('请先新建或打开一个工程，再粘贴图片')
+    return
+  }
+  // rename：剪贴板文件名一律 image.png/blob，不改名两个截图会同名被去重吞掉一个
+  files.forEach((raw) => chatStore.upsertUploadedAttachment(renamePastedFile(raw)))
+  ElMessage.success(`已粘贴 ${files.length} 个附件`)
 }
 
 function openAttachmentPicker() {
