@@ -32,8 +32,9 @@
         class="agent-message"
         :class="[`is-${message.role}`, { 'is-error': message.isError }]"
       >
-        <div class="agent-message-meta">
-          <div v-if="message.toolName" class="agent-tool-chip">
+        <!-- 只有工具标签时才渲染 meta 行，否则 16px 占位条会造成每轮间莫名的空白带 -->
+        <div v-if="message.toolName" class="agent-message-meta">
+          <div class="agent-tool-chip">
             {{ formatToolName(message.toolName) }}
           </div>
         </div>
@@ -557,16 +558,23 @@ const visibleMessages = computed(() =>
   will-change: transform, opacity;
 }
 
-/* ------- 悬停操作栏（open-webui 设计） ------- */
+/* ------- 消息操作栏（open-webui 设计） -------
+   常亮低透明（0.45）+ 悬停全亮：完全隐藏会留下一段看不见的占位高度，
+   在气泡间形成“吓人”的空白带（用户反馈 2026-10-03）。常亮也有可发现性收益。 */
 .agent-message-actions {
   display: flex;
   gap: 4px;
-  opacity: 0;
+  opacity: 0.45;
   transform: translateY(-2px);
   transition:
     opacity 160ms ease,
     transform 160ms ease;
-  pointer-events: none;
+}
+
+.agent-message:hover .agent-message-actions,
+.agent-message-actions:focus-within {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* UI2：用户消息的操作栏靠右对齐 */
@@ -699,13 +707,6 @@ const visibleMessages = computed(() =>
 
 .agent-followup-chip:hover {
   background: rgba(122, 162, 255, 0.2);
-}
-
-.agent-message:hover .agent-message-actions,
-.agent-message-actions:focus-within {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
 }
 
 .agent-action-btn {
