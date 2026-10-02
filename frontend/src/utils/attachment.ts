@@ -6,6 +6,25 @@ import type { AgentAttachmentItem } from '@/serve/agent'
 
 export type AttachmentKind = 'image' | 'pdf' | 'word' | 'excel' | 'ppt' | 'text' | 'file'
 
+/** 附件白名单（选块器/粘贴/拖拽三个入口共用，防人工散滑） */
+export const ATTACHMENT_ACCEPT_EXTENSIONS = [
+  'png', 'jpg', 'jpeg', 'gif', 'webp',
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'txt', 'md', 'json', 'csv',
+] as const
+
+/** 把任意来源文件拦分成可用/被拒两拨；被拒返回给调用方数量的 toast */
+export function filterAcceptableFiles(files: File[]): { accepted: File[]; rejected: File[] } {
+  const accepted: File[] = []
+  const rejected: File[] = []
+  for (const file of files) {
+    const ext = getAttachmentExtension(file.name)
+    if ((ATTACHMENT_ACCEPT_EXTENSIONS as readonly string[]).includes(ext)) accepted.push(file)
+    else rejected.push(file)
+  }
+  return { accepted, rejected }
+}
+
 export interface UploadedAttachment {
   id: string
   name: string

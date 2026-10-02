@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   renamePastedFile,
+  filterAcceptableFiles,
   getAttachmentBadge,
   getAttachmentExtension,
   resolveAttachmentKind,
@@ -80,5 +81,17 @@ describe('renamePastedFile', () => {
   it('已经有正常名字的文件（本地拖入）保持原样', () => {
     const file = new File(['x'], '设计稿-封面.png', { type: 'image/png' })
     expect(renamePastedFile(file).name).toBe('设计稿-封面.png')
+  })
+})
+
+// UI2 第二批②：粘贴/拖拽的白名单过滤（与选块器 accept 同源）
+describe('filterAcceptableFiles', () => {
+  it('白名单内的收下，不在的拒掉，两边都不丢文件', () => {
+    const png = new File(['x'], 'a.png')
+    const md = new File(['x'], 'README.md')
+    const exe = new File(['x'], 'evil.exe')
+    const { accepted, rejected } = filterAcceptableFiles([png, md, exe])
+    expect(accepted.map((f) => f.name)).toEqual(['a.png', 'README.md'])
+    expect(rejected.map((f) => f.name)).toEqual(['evil.exe'])
   })
 })

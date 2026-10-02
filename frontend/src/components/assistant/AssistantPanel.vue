@@ -1,5 +1,17 @@
 <template>
-  <div class="assistant-panel">
+  <div
+    class="assistant-panel"
+    @dragenter="handleDragEnter"
+    @dragover="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop="handleDrop"
+  >
+    <!-- UI2 第二批②：拖文件进对话区时的提示覆盖层（open-webui dropzone 设计） -->
+    <Transition name="panel-float">
+      <div v-if="isDragOver" class="assistant-drop-overlay" aria-hidden="true">
+        <div class="assistant-drop-box">松手把文件放进对话附件位</div>
+      </div>
+    </Transition>
     <div class="assistant-head">
       <div class="assistant-head-top">
         <div class="assistant-head-copy">
@@ -45,15 +57,15 @@
     ></div>
 
     <div class="composer-wrap" :class="{ 'has-attachment-dock': chatStore.hasUploadedAttachments }">
-      <ChatComposer @send="handleSend" @stop="handleStop" />
+      <ChatComposer @send="handleSend" @stop="handleStop" @attach="handleAttach" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 // 助手面板（D1 拆分第 10 步，todo §8.4）：组合消息列表与输入区，
-// 持有滚动容器，并实例化 useAgentChat 完成发送/加载流程。
-import { nextTick, ref, watch } from 'vue'
+// 持有滚动容器，并实例化 useAgentChat 完成发送/加载/附件入队流程。
+import { computed, nextTick, ref, watch } from 'vue'
 import { useChatStore, type AgentMessage } from '@/stores/chat'
 import { useAgentChat } from '@/composables/useAgentChat'
 import MessageList from './MessageList.vue'
@@ -76,7 +88,42 @@ const {
   stopGenerating,
   applyEditedMessage,
   submitFeedback,
+  addAttachmentFiles,
 } = useAgentChat({ scrollToBottom })
+
+// UI2 第二批②：拖拽判定（depth 计数——拖过子元素也会触发 leave，只计最后真正出离面板）
+const dragDepth = ref(0)
+const isDragOver = computed(() => dragDepth.value > 0)
+
+function dragHasFiles(event: DragEvent) {
+  return Array.from(event.dataTransfer?.types ?? []).includes('Files')
+}
+
+function handleDragEnter(event: DragEvent) {
+  if (!dragHasFiles(event)) return
+  event.preventDefault()
+  dragDepth.value += 1
+}
+
+function handleDragOver(event: DragEvent) {
+  if (dragHasFiles(event)) event.preventDefault() // 不 prevent 就不会触发 drop
+}
+
+function handleDragLeave() {
+  dragDepth.value = Math.max(0, dragDepth.value - 1)
+}
+
+function handleDrop(event: DragEvent) {
+  dragDepth.value = 0
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (!files.length) return
+  event.preventDefault()
+  addAttachmentFiles(files)
+}
+
+function handleAttach(files: File[]) {
+  addAttachmentFiles(files)
+}
 
 function handleSend() {
   void sendMessage()
@@ -110,6 +157,26 @@ defineExpose({ loadHistory, scrollToBottom })
 </script>
 
 <style scoped>
+/* UI2 第二批②：拖拽覆盖层 */
+.assistant-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 12, 20, 0.62);
+  pointer-events: none; /* 覆盖层不吃事件，否则 drop 会被它劫走 */
+}
+
+.assistant-drop-box {
+  padding: 18px 34px;
+  border: 1.5px dashed rgba(158, 188, 255, 0.6);
+  border-radius: 16px;
+  color: rgb(190, 208, 255);
+  font-size: 14px;
+  background: rgba(122, 162, 255, 0.08);
+}
+
 .assistant-panel {
   height: 100%;
   min-height: 0;

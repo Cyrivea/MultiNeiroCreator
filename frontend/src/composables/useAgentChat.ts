@@ -15,7 +15,12 @@ import {
   type AgentHistoryItem,
 } from '@/serve/agent'
 import { createTypewriter } from '@/utils/typewriter'
-import { cloneAttachmentForMessage, hydrateAttachmentFromPayload } from '@/utils/attachment'
+import {
+  cloneAttachmentForMessage,
+  filterAcceptableFiles,
+  hydrateAttachmentFromPayload,
+  renamePastedFile,
+} from '@/utils/attachment'
 import { useChatStore, type AgentMessage } from '@/stores/chat'
 import { useProjectStore } from '@/stores/project'
 import { useTaskStore } from '@/stores/tasks'
@@ -134,6 +139,9 @@ export function useAgentChat(options: UseAgentChatOptions) {
         chatStore.enqueueMessage(message)
         chatStore.draft = ''
         chatStore.followUps = []
+      } else if (pendingAttachments.length) {
+        // 守卫原本是静默 return——粘贴/拖拽让加附件变容易了，人不知道发不出去就高位不安
+        ElMessage.info('当前回复生成中，带附件的消息请稍等本轮结束后再发')
       }
       return
     }
@@ -401,6 +409,23 @@ export function useAgentChat(options: UseAgentChatOptions) {
     await sendMessage({ overrideMessage: lastUserContent, regenerate: true })
   }
 
+  /** UI2 第二批①②：三个入附口（选块器/粘贴/拖拽）共用一道门 —— 项目检查、白名单过滤、重名体检 */
+  function addAttachmentFiles(files: File[]) {
+    if (!files.length) return
+    if (projectStore.id == null) {
+      ElMessage.warning('请先新建或打开一个工程，再添加附件')
+      return
+    }
+    const { accepted, rejected } = filterAcceptableFiles(files)
+    accepted.forEach((raw) => chatStore.upsertUploadedAttachment(renamePastedFile(raw)))
+    if (rejected.length) {
+      ElMessage.warning(`${rejected.length} 个文件的格式不在支持列表里，已跳过`)
+    }
+    if (accepted.length) {
+      ElMessage.success(`已添加 ${accepted.length} 个待发送附件`)
+    }
+  }
+
   return {
     sendMessage,
     loadHistory,
@@ -408,5 +433,6 @@ export function useAgentChat(options: UseAgentChatOptions) {
     stopGenerating,
     applyEditedMessage,
     submitFeedback,
+    addAttachmentFiles,
   }
 }

@@ -8,7 +8,7 @@
       ref="attachmentInputRef"
       class="composer-attachment-input"
       type="file"
-      accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.json,.csv,image/png,image/jpeg,image/gif,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      :accept="attachmentAcceptAttr"
       @change="handleAttachmentPicked"
     />
     <!-- UI2-⑥：生成中允许继续敲打草稿（发送进排队），输入框不锁 -->
@@ -129,9 +129,8 @@
 // 附件选择、模型菜单；发送动作通过事件上抛给 AssistantPanel。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from '@/utils/toast'
-import { renamePastedFile } from '@/utils/attachment'
+import { ATTACHMENT_ACCEPT_EXTENSIONS } from '@/utils/attachment'
 import { useChatStore } from '@/stores/chat'
-import { useProjectStore } from '@/stores/project'
 import AttachmentDock from './AttachmentDock.vue'
 
 interface ModelOption {
@@ -141,13 +140,21 @@ interface ModelOption {
   disabled?: boolean
 }
 
-const emit = defineEmits<{ (e: 'send'): void; (e: 'stop'): void }>()
+const emit = defineEmits<{
+  (e: 'send'): void
+  (e: 'stop'): void
+  /** UI2 第二批：三个入附口（选块器/粘贴/拖拽）统一成一道事件，状态收在 composable */
+  (e: 'attach', files: File[]): void
+}>()
 
 const chatStore = useChatStore()
-const projectStore = useProjectStore()
 
 const attachmentInputRef = ref<HTMLInputElement | null>(null)
 const modelMenuRef = ref<HTMLElement | null>(null)
+// accept 与白名单同一个源（UI2 第二批：选块器/粘贴/拖拽共用同一份格式门禁）
+const attachmentAcceptAttr = computed(() =>
+  (ATTACHMENT_ACCEPT_EXTENSIONS as readonly string[]).map((ext) => `.${ext}`).join(','),
+)
 const isModelMenuOpen = ref(false)
 
 const modelOptions: ModelOption[] = [
@@ -173,18 +180,12 @@ function selectModel(option: ModelOption) {
   ElMessage.success(`已切换为 ${option.label}`)
 }
 
-/** UI2 第二批①：剪贴板有文件（截图/复制的图片）就进附件位；纯文本粘贴不拦截 */
+/** UI2 第二批①：剪贴板有文件（截图/复制的图片）就抛给统一个人入口；纯文本粘贴不拦截 */
 function handlePaste(event: ClipboardEvent) {
   const files = Array.from(event.clipboardData?.files ?? [])
   if (!files.length) return
   event.preventDefault()
-  if (projectStore.id == null) {
-    ElMessage.warning('请先新建或打开一个工程，再粘贴图片')
-    return
-  }
-  // rename：剪贴板文件名一律 image.png/blob，不改名两个截图会同名被去重吞掉一个
-  files.forEach((raw) => chatStore.upsertUploadedAttachment(renamePastedFile(raw)))
-  ElMessage.success(`已粘贴 ${files.length} 个附件`)
+  emit('attach', files)
 }
 
 function openAttachmentPicker() {
@@ -192,29 +193,14 @@ function openAttachmentPicker() {
   attachmentInputRef.value?.click()
 }
 
-async function handleAttachmentPicked(event: Event) {
+function handleAttachmentPicked(event: Event) {
   const input = event.target as HTMLInputElement | null
-  const file = input?.files?.[0]
-  if (!file) return
-
-  if (projectStore.id == null) {
-    ElMessage.warning('请先新建或打开一个工程，再把资料挂到当前工程里')
-    if (input) {
-      input.value = ''
-    }
-    return
+  const files = Array.from(input?.files ?? [])
+  if (files.length) {
+    emit('attach', files)
   }
-
-  try {
-    chatStore.upsertUploadedAttachment(file)
-    ElMessage.success(`已添加待发送附件：${file.name}`)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '添加附件失败'
-    ElMessage.error(message)
-  } finally {
-    if (input) {
-      input.value = ''
-    }
+  if (input) {
+    input.value = ''
   }
 }
 
